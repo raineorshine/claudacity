@@ -164,7 +164,6 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     defer gpa.free(c_acct);
 
     desktop.quit(gpa, io);
-    const has_desktop = desktop.hasData(gpa, name);
 
     if (opts.carry_sessions) {
         if (cur) |c_name| {
@@ -187,7 +186,7 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
 
     try switchLinksIn(gpa, h, name);
     try desktop.swap(gpa, cur, name);
-    if (has_desktop) desktop.launch(gpa, io);
+    if (desktop.hasLiveData(gpa)) desktop.launch(gpa, io);
 
     const msg = try std.fmt.allocPrint(gpa, "Switched to '{s}'", .{name});
     defer gpa.free(msg);

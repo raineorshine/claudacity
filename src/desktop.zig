@@ -56,6 +56,15 @@ pub fn hasData(gpa: std.mem.Allocator, name: []const u8) bool {
     return hasDataIn(gpa, h, name);
 }
 
+/// True when the live Desktop dir holds a session (e.g. after swap).
+pub fn hasLiveData(gpa: std.mem.Allocator) bool {
+    const h = paths.home(gpa) catch return false;
+    defer gpa.free(h);
+    const d = paths.desktopDirIn(gpa, h) catch return false;
+    defer gpa.free(d);
+    return dirHasEntries(gpa, d);
+}
+
 pub fn swap(gpa: std.mem.Allocator, current_name: ?[]const u8, to_name: []const u8) !void {
     const h = try paths.home(gpa);
     defer gpa.free(h);
@@ -78,6 +87,10 @@ pub fn getSessionKey(gpa: std.mem.Allocator, io: std.Io) ![]const u8 {
 pub fn hasDataIn(gpa: std.mem.Allocator, base: []const u8, name: []const u8) bool {
     const d = paths.desktopProfileDirIn(gpa, base, name) catch return false;
     defer gpa.free(d);
+    return dirHasEntries(gpa, d);
+}
+
+fn dirHasEntries(gpa: std.mem.Allocator, d: []const u8) bool {
     const d_z = gpa.dupeZ(u8, d) catch return false;
     defer gpa.free(d_z);
     // Use opendir to check if dir has any entries
