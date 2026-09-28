@@ -6,6 +6,9 @@ const keychain = @import("keychain.zig");
 const desktop = @import("desktop.zig");
 const paths = @import("paths.zig");
 const profile = @import("profile.zig");
+const usage = @import("usage.zig");
+const handoff = @import("handoff.zig");
+const schedule = @import("schedule.zig");
 
 // Re-exporta os módulos para que `zig build test` colete todos os test blocks.
 comptime {
@@ -17,6 +20,15 @@ comptime {
     _ = @import("profile.zig");
     _ = @import("skills.zig");
     _ = @import("plugins.zig");
+    _ = @import("exec.zig");
+    _ = @import("http.zig");
+    _ = @import("oauth.zig");
+    _ = @import("usage.zig");
+    _ = @import("sessions.zig");
+    _ = @import("cloud.zig");
+    _ = @import("handoff.zig");
+    _ = @import("schedule.zig");
+    _ = @import("json.zig");
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
@@ -193,7 +205,15 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     if (std.mem.eql(u8, cmd, "save")) {
         return profile.cmdSave(gpa, io, try needsName(args, "save"));
     } else if (std.mem.eql(u8, cmd, "use")) {
-        return profile.cmdUse(gpa, io, try needsName(args, "use"));
+        const name = try needsName(args, "use");
+        const carry = args.len >= 3 and std.mem.eql(u8, args[2], "--carry-sessions");
+        var result = try profile.useWith(gpa, io, name, .{ .carry_sessions = carry });
+        defer result.deinit(gpa);
+        if (result.carry) |c| {
+            display.print("Carried {d} open session(s) into '{s}'\n", .{ c.carried, name });
+            for (c.failed.items) |f| display.print("  not carried: {s} ({s})\n", .{ f.title, f.reason });
+        } else if (result.carry_skipped) |why| display.print("⚠️  Sessions not carried: {s}\n", .{why});
+        return;
     } else if (std.mem.eql(u8, cmd, "switch")) {
         display.info("'switch' is deprecated, use 'use' instead");
         return profile.cmdUse(gpa, io, try needsName(args, "switch"));
@@ -221,6 +241,27 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, cmd, "update")) {
         const verbose = args.len >= 2 and std.mem.eql(u8, args[1], "--verbose");
         return cmdUpdate(gpa, io, verbose);
+    } else if (std.mem.eql(u8, cmd, "usage")) {
+        return usage.cmdUsage(gpa, io);
+    } else if (std.mem.eql(u8, cmd, "next")) {
+        return usage.cmdNext(gpa, io);
+    } else if (std.mem.eql(u8, cmd, "handoff")) {
+        var opts: handoff.Options = .{};
+        for (args[1..]) |a| {
+            if (std.mem.eql(u8, a, "--dry-run")) {
+                opts.dry_run = true;
+            } else if (std.mem.eql(u8, a, "--force")) {
+                opts.force = true;
+            } else if (std.mem.eql(u8, a, "--scheduled")) {
+                opts.scheduled = true;
+            } else {
+                display.print("❌  Unknown option for handoff: {s}\n", .{a});
+                return error.UnknownOption;
+            }
+        }
+        return handoff.cmdHandoff(gpa, io, opts);
+    } else if (std.mem.eql(u8, cmd, "schedule")) {
+        return schedule.cmdSchedule(gpa, io, if (args.len >= 2) args[1] else null);
     } else if (std.mem.eql(u8, cmd, "logout-all")) {
         return profile.cmdLogoutAll(gpa, io);
     } else if (std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-v")) {
@@ -243,13 +284,18 @@ fn printHelp() void {
         \\
         \\COMMANDS:
         \\  save <name>      Save current sessions as a named profile
-        \\  use <name>       Switch to a saved profile
+        \\  use <name> [--carry-sessions]  Switch to a saved profile; optionally move open local Code sessions with you
         \\  new <name>       Create a new empty profile slot
         \\  share <source> <target>  Share local skills and plugins on each switch
         \\  unshare <target>        Stop sharing and remove shared skill links
         \\  delete [name]    Delete a profile
         \\  list             List all saved profiles
         \\  whoami           Show active session info
+        \\  usage            Show 5-hour and weekly usage for every profile
+        \\  next             Show which profile a switch would move to, and why
+        \\  handoff [--dry-run] [--force]  At 90%+ weekly usage: hand off cloud sessions, carry
+        \\                   local sessions, switch to the next profile, and notify
+        \\  schedule [install|uninstall|status]  Run csw handoff every night at 22:00 (launchd)
         \\  pick             Interactive profile picker (sk / fzf)
         \\  update [--verbose]  Update csw to the latest release
         \\  logout-all       Log out and remove all active symlinks
