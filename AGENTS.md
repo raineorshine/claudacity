@@ -19,6 +19,7 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 - Before switching or handing off, check that each profile holds its own account (`csw whoami`, `csw usage`). A `claude auth login` run under the wrong profile gets saved over that profile's login by the next switch; repair it first (`docs/claude-internals.md`, Logins).
 - The installed `~/.local/bin/csw` is built from `main` by `ship`, so it lacks whatever this branch adds. Use this checkout's `zig-out/bin/csw`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under csw and forces a fresh sign-in.
+- `csw usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel.
 - Secrets never go in process arguments: requests go through `exec.run` with the request on stdin (`src/http.zig`). `std.process.run` always ignores stdin in Zig 0.16, so piping needs `std.process.spawn` with `.stdin = .pipe` (`src/exec.zig`).
 
 ## Zig tests
