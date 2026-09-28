@@ -64,6 +64,17 @@ git log --oneline $(git merge-base HEAD origin/main)..origin/main -- <file>
 
 Anything listed there that your side does not contain is about to be undone.
 
+**Read what the rebase brought into `AGENTS.md` and `docs/` against the change.** Another session can
+have written a claim this branch makes untrue — the first ship of this skill landed beside a new line
+saying the installed csw was the upstream release, which step 7 was about to falsify. A clean rebase
+flags none of it:
+
+```bash
+git diff $(git merge-base ORIG_HEAD origin/main) origin/main -- AGENTS.md docs/ README.md
+```
+
+Correct it before the squash, so it lands in this ship.
+
 Re-run step 1 after any rebase that brought code in: the gates passed on a different tree.
 
 Already on `main`: skip the rebase and step 4, but not the fetch — `git pull --ff-only`, commit, and go
