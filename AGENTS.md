@@ -8,6 +8,10 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 - Judge a test run by its exit code and `Build Summary`. An existing Desktop test prints `❌  Cookies DB não encontrado` and a `failed command:` line on every passing run.
 - `csw handoff --dry-run` is the safe end-to-end smoke. It still refreshes expired saved logins, which writes the rotated login to the Keychain.
 
+## Shipping
+
+The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) and rebuilds the installed `~/.local/bin/csw` from main. It runs only when the user asks. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
+
 ## Working rules
 
 - Never run a real switch, carry-over or cloud continuation against the user's profiles to test something. Build the case in temp directories; the first real run is the user's.
