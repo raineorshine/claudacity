@@ -10,8 +10,8 @@ push it to `origin/main` on the fork. No PR, and no merge commits.
 
 **Shipping is asked for, never inferred.** A change that is finished, gated and clean is a change
 ready to ship, not one to ship — say so and stop. Only the user saying to ship, land, merge or push it
-starts this procedure, or a skill the user invoked whose own procedure ends in one, `learn` and
-`learn-organize` among them.
+starts this procedure, or a skill the user invoked whose own procedure ends in one, `ship-at-end`,
+`learn` and `learn-organize` among them.
 
 `origin/main` is the source of truth, not the local `main` ref, which can be behind what another
 session pushed. Pushing from the worktree keeps shipping independent of the main checkout, which is

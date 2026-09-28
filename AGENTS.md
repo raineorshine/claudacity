@@ -10,7 +10,7 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 
 ## Shipping
 
-The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) and rebuilds the installed `~/.local/bin/csw` from main. It runs only when the user asks. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
+The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) and rebuilds the installed `~/.local/bin/csw` from main. It runs only when the user asks, or invokes [`ship-at-end`](.claude/skills/ship-at-end/SKILL.md) to implement a change and ship it once it looks good. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
 
 ## Working rules
 
