@@ -239,7 +239,29 @@ fn formatReset(buf: []u8, epoch: i64) []const u8 {
     return buf[0..n];
 }
 
+/// ANSI color for a usage percentage: green, yellow, orange, then red once the profile is full.
+fn pctColor(pct: f64) []const u8 {
+    if (pct < 0) return "";
+    if (pct < 50) return "\x1b[32m";
+    if (pct < 75) return "\x1b[33m";
+    if (pct < THRESHOLD_PCT) return "\x1b[38;5;208m";
+    return "\x1b[31m";
+}
+
+/// Colors only a terminal, and never when NO_COLOR is set.
+fn useColor() bool {
+    if (std.c.getenv("NO_COLOR")) |v| if (v[0] != 0) return false;
+    return std.c.isatty(std.posix.STDOUT_FILENO) == 1;
+}
+
+fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
+    const code = if (color) pctColor(pct) else "";
+    const reset: []const u8 = if (code.len > 0) "\x1b[0m" else "";
+    return std.fmt.bufPrint(buf, "{s}{d:>5.1}%{s}", .{ code, pct, reset }) catch "";
+}
+
 pub fn printRows(rows: []const ProfileUsage) void {
+    const color = useColor();
     for (rows) |row| {
         const marker: []const u8 = if (row.active) "> " else "  ";
         switch (row.state) {
@@ -248,9 +270,12 @@ pub fn printRows(rows: []const ProfileUsage) void {
                 var b2: [64]u8 = undefined;
                 const five = u.five_hour orelse Window{ .pct = -1, .resets_at = 0 };
                 const week = u.seven_day orelse Window{ .pct = -1, .resets_at = 0 };
-                display.print("{s}{s:<12} 5h {d:>5.1}%  (resets {s})   7d {d:>5.1}%  (resets {s})\n", .{
-                    marker,   row.name,                         five.pct, formatReset(&b1, five.resets_at),
-                    week.pct, formatReset(&b2, week.resets_at),
+                var p1: [32]u8 = undefined;
+                var p2: [32]u8 = undefined;
+                display.print("{s}{s:<12} 5h {s}  (resets {s})   7d {s}  (resets {s})\n", .{
+                    marker,                          row.name,
+                    formatPct(&p1, five.pct, color), formatReset(&b1, five.resets_at),
+                    formatPct(&p2, week.pct, color), formatReset(&b2, week.resets_at),
                 });
             },
             .needs_sign_in => display.print("{s}{s:<12} needs signing in again (saved login is no longer valid)\n", .{ marker, row.name }),
@@ -353,4 +378,18 @@ test "chooseNext breaks reset ties by lower usage" {
 test "activeWeekly returns the active profile's weekly window" {
     const rows = [_]ProfileUsage{ testRow("x", false, 1, 1), testRow("primary", true, 91, 7) };
     try std.testing.expectEqual(@as(f64, 91), activeWeekly(&rows).?.pct);
+}
+
+test "pctColor bands usage green, yellow, orange, red" {
+    try std.testing.expectEqualStrings("\x1b[32m", pctColor(0));
+    try std.testing.expectEqualStrings("\x1b[33m", pctColor(50));
+    try std.testing.expectEqualStrings("\x1b[38;5;208m", pctColor(75));
+    try std.testing.expectEqualStrings("\x1b[31m", pctColor(THRESHOLD_PCT));
+    try std.testing.expectEqualStrings("", pctColor(-1));
+}
+
+test "formatPct keeps the column width and leaves plain output uncolored" {
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqualStrings(" 42.0%", formatPct(&buf, 42, false));
+    try std.testing.expectEqualStrings("\x1b[31m 95.0%\x1b[0m", formatPct(&buf, 95, true));
 }
