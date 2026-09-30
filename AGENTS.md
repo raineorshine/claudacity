@@ -15,7 +15,7 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 ## Working rules
 
 - Never run a real switch, carry-over or cloud continuation against the user's profiles to test something. Build the case in temp directories; the first real run is the user's.
-- Reading saved logins (even hashed, to compare them) or calling Anthropic's API with them, rewriting `~/.claude.<profile>.json`, writing Desktop's session records, and teleporting cloud sessions are blocked by auto mode until the user approves. Ask before relying on them, or hand the user a script to run.
+- Reading saved logins (even hashed, to compare them) or calling Anthropic's API with them, rewriting `~/.claude.<profile>.json`, writing Desktop's session records, teleporting cloud sessions, and reading the contents of files in Desktop's data directory (`claude_desktop_config.json` included) are blocked by auto mode until the user approves. Listing that directory is allowed; for a config's shape, hand the user a keys-only `jq` command (`jq -r '.preferences | keys[]'`). Ask before relying on them, or hand the user a script to run.
 - Before switching or handing off, check that each profile holds its own account (`csw whoami`, `csw usage`). A `claude auth login` run under the wrong profile gets saved over that profile's login by the next switch; repair it first (`docs/claude-internals.md`, Logins).
 - The installed `~/.local/bin/csw` is built from `main` by `ship`, so it lacks whatever this branch adds. Use this checkout's `zig-out/bin/csw`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under csw and forces a fresh sign-in.
