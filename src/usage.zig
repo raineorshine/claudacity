@@ -241,7 +241,6 @@ fn formatReset(buf: []u8, epoch: i64) []const u8 {
 
 /// ANSI color for a usage percentage: green, yellow, orange, then red once the profile is full.
 fn pctColor(pct: f64) []const u8 {
-    if (pct < 0) return "";
     if (pct < 50) return "\x1b[32m";
     if (pct < 75) return "\x1b[33m";
     if (pct < THRESHOLD_PCT) return "\x1b[38;5;208m";
@@ -260,22 +259,28 @@ fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
     return std.fmt.bufPrint(buf, "{s}{d:>5.1}%{s}", .{ code, pct, reset }) catch "";
 }
 
+/// One usage window's column: its percentage and reset time, or a placeholder of the
+/// same width when the API reports no window (no usage in the 5-hour window yet).
+fn formatWindow(buf: []u8, window: ?Window, color: bool) []const u8 {
+    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<25}", .{ "--", "(no active window)" }) catch "";
+    var p: [32]u8 = undefined;
+    var t: [64]u8 = undefined;
+    var r: [80]u8 = undefined;
+    const resets = std.fmt.bufPrint(&r, "(resets {s})", .{formatReset(&t, w.resets_at)}) catch "";
+    return std.fmt.bufPrint(buf, "{s}  {s:<25}", .{ formatPct(&p, w.pct, color), resets }) catch "";
+}
+
 pub fn printRows(rows: []const ProfileUsage) void {
     const color = useColor();
     for (rows) |row| {
         const marker: []const u8 = if (row.active) "> " else "  ";
         switch (row.state) {
             .usage => |u| {
-                var b1: [64]u8 = undefined;
-                var b2: [64]u8 = undefined;
-                const five = u.five_hour orelse Window{ .pct = -1, .resets_at = 0 };
-                const week = u.seven_day orelse Window{ .pct = -1, .resets_at = 0 };
-                var p1: [32]u8 = undefined;
-                var p2: [32]u8 = undefined;
-                display.print("{s}{s:<12} 5h {s}  (resets {s})   7d {s}  (resets {s})\n", .{
-                    marker,                          row.name,
-                    formatPct(&p1, five.pct, color), formatReset(&b1, five.resets_at),
-                    formatPct(&p2, week.pct, color), formatReset(&b2, week.resets_at),
+                var b1: [128]u8 = undefined;
+                var b2: [128]u8 = undefined;
+                display.print("{s}{s:<12} 5h {s}   7d {s}\n", .{
+                    marker,                                  row.name,
+                    formatWindow(&b1, u.five_hour, color), formatWindow(&b2, u.seven_day, color),
                 });
             },
             .needs_sign_in => display.print("{s}{s:<12} needs signing in again (saved login is no longer valid)\n", .{ marker, row.name }),
@@ -325,6 +330,16 @@ test "parseUsage reads both windows" {
 test "parseUsage reports a null weekly window as unknown, not 0%" {
     const u = try parseUsage(std.testing.allocator, "{\"five_hour\":null,\"seven_day\":null}");
     try std.testing.expect(u.seven_day == null);
+}
+
+test "formatWindow shows a missing window as a placeholder, not a negative percentage" {
+    var buf: [128]u8 = undefined;
+    const missing = formatWindow(&buf, null, false);
+    try std.testing.expectEqualStrings("    --  (no active window)       ", missing);
+    var buf2: [128]u8 = undefined;
+    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false);
+    try std.testing.expectEqual(missing.len, present.len);
+    try std.testing.expect(std.mem.startsWith(u8, present, "  6.0%  (resets "));
 }
 
 test "parseUsage rejects non-JSON" {
@@ -385,7 +400,6 @@ test "pctColor bands usage green, yellow, orange, red" {
     try std.testing.expectEqualStrings("\x1b[33m", pctColor(50));
     try std.testing.expectEqualStrings("\x1b[38;5;208m", pctColor(75));
     try std.testing.expectEqualStrings("\x1b[31m", pctColor(THRESHOLD_PCT));
-    try std.testing.expectEqualStrings("", pctColor(-1));
 }
 
 test "formatPct keeps the column width and leaves plain output uncolored" {

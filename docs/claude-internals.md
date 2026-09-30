@@ -14,7 +14,7 @@ csw drives parts of Claude it does not own: Desktop's data directory, Claude Cod
 
 ## Endpoints (Bearer = the profile's access token)
 
-- Usage: `GET https://api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20`. Returns `five_hour` and `seven_day` blocks with `utilization` (percent) and `resets_at` (ISO 8601 with fractional seconds and offset); either block can be `null`.
+- Usage: `GET https://api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20`. Returns `five_hour` and `seven_day` blocks with `utilization` (percent) and `resets_at` (ISO 8601 with fractional seconds and offset); either block can be `null`. `five_hour` is `null` when the account has used nothing since its last 5-hour window ended.
 - Cloud sessions: `GET https://api.anthropic.com/v1/sessions?limit=50`, headers `anthropic-beta: ccr-byoc-2025-07-29`, `anthropic-version: 2023-06-01`, `x-organization-uuid: <org>`. Pages with `has_more` / `last_id`; the next page is `&after_id=<last_id>`. `environment_kind` is `anthropic_cloud` for cloud sessions and `bridge` for local sessions served over Remote Control. `session_status` is `running`, `idle`, `requires_action` or `archived`. The repo is in `session_context.sources[].url` (type `git_repository`) and the branch in `external_metadata.current_branches`.
 
 ## Claude Desktop's data directory and account
