@@ -111,6 +111,14 @@ csw use personal
 csw pick
 ```
 
+### Desktop settings follow you
+
+Each switch carries Claude Desktop's app settings (Remote Control, keep-awake,
+sidebar and the rest of its preferences) and its MCP server list from the
+profile you leave into the one you switch to, so the last change wins in every
+profile. Sign-ins, the Remote Control connection and settings Desktop takes
+from an account's organization stay with each profile.
+
 ### Skills and plugins in a new profile
 
 `csw new` creates an empty `~/.claude.<profile>/` directory. Claude Code user

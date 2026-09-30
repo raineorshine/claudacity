@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const desktop = @import("desktop.zig");
+const desktop_settings = @import("desktop_settings.zig");
 const display = @import("display.zig");
 const keychain = @import("keychain.zig");
 const paths = @import("paths.zig");
@@ -85,6 +86,19 @@ pub const UseResult = struct {
         if (r.carry) |*carried| carried.deinit(gpa);
     }
 };
+
+/// Carries Desktop's preferences and MCP servers from `from`, already swapped
+/// out, into the live Desktop dir now holding `to`. A failure only warns.
+fn carryDesktopSettings(gpa: std.mem.Allocator, io: std.Io, h: []const u8, from: []const u8, to: []const u8) void {
+    if (std.mem.eql(u8, from, to)) return;
+    const from_dir = paths.desktopProfileDirIn(gpa, h, from) catch return;
+    defer gpa.free(from_dir);
+    const to_dir = paths.desktopDirIn(gpa, h) catch return;
+    defer gpa.free(to_dir);
+    _ = desktop_settings.carryIn(gpa, io, from_dir, to_dir) catch |err| {
+        display.print("⚠️  Could not carry Desktop settings from '{s}': {s}\n", .{ from, @errorName(err) });
+    };
+}
 
 /// Carries open local sessions from the active profile `from` into `to`.
 /// Runs after Desktop has quit and before the profile directories swap.
@@ -186,6 +200,7 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
 
     try switchLinksIn(gpa, h, name);
     try desktop.swap(gpa, cur, name);
+    if (cur) |c_name| carryDesktopSettings(gpa, io, h, c_name, name);
     if (desktop.hasLiveData(gpa)) desktop.launch(gpa, io);
 
     const msg = try std.fmt.allocPrint(gpa, "Switched to '{s}'", .{name});
@@ -229,6 +244,7 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
 
     try switchLinksIn(gpa, h, name);
     try desktop.swap(gpa, cur_name, name);
+    if (cur_name) |cn| carryDesktopSettings(gpa, io, h, cn, name);
 
     const ok_msg = try std.fmt.allocPrint(gpa, "Profile '{s}' created and activated.", .{name});
     defer gpa.free(ok_msg);

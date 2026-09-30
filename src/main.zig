@@ -20,6 +20,7 @@ comptime {
     _ = @import("profile.zig");
     _ = @import("skills.zig");
     _ = @import("plugins.zig");
+    _ = @import("desktop_settings.zig");
     _ = @import("exec.zig");
     _ = @import("http.zig");
     _ = @import("oauth.zig");

@@ -20,6 +20,7 @@ csw drives parts of Claude it does not own: Desktop's data directory, Claude Cod
 ## Claude Desktop's data directory and account
 
 - The active profile's Desktop data is the live `~/Library/Application Support/Claude`; only inactive profiles have a `Claude.<profile>` copy. A missing `Claude.<active>` is expected: csw writes it on the next switch away.
+- Desktop keeps app settings in the data directory, so each profile has its own copy. On a switch csw copies the `preferences` and `mcpServers` keys of `claude_desktop_config.json` from the profile being left into the live one (`src/desktop_settings.zig`). `config.json`, cookies and `remote-control-state.json` hold account state and stay per profile, as do the org-derived preferences (`coworkHipaaRestricted`, `orgWorkAcrossAppsDisabled`) and the target's own entries in `...ByAccount` maps.
 - The name in Desktop's account picker is the claude.ai account's display name and has no tie to the csw profile name. Identify the signed-in account by email (`csw whoami`, or `oauthAccount.emailAddress` in `~/.claude.<profile>.json`). That file's `displayName` is Claude Code's cached copy and lags a rename made on claude.ai.
 
 ## Claude Desktop's local Code sessions
