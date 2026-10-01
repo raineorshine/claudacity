@@ -102,12 +102,12 @@ back to step 3, redo step 4 onto the new base, and push again.
 ### 6. Move the local main
 
 ```bash
-MAIN=$(git worktree list | head -1 | awk '{print $1}') && if [ "$(git -C "$MAIN" branch --show-current)" = main ]; then git -C "$MAIN" merge --ff-only origin/main; else git fetch origin main:main; fi
+git fetch origin main && MAIN=$(git worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/main"{print w}') && if [ -z "$MAIN" ]; then git fetch origin main:main; elif [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then echo "local main left behind: $MAIN has local changes"; else git -C "$MAIN" merge --ff-only origin/main; fi
 ```
 
-The main checkout usually has `main` checked out, and `git fetch origin main:main` refuses to move a
-checked-out branch, so there it fast-forwards in place; elsewhere it moves the ref without a checkout.
-Leave any local changes that refuse the fast-forward — never `checkout --` someone's work away.
+It fast-forwards `main` in place wherever it is checked out, and moves the ref alone when `main` is
+checked out nowhere, since `git fetch origin main:main` refuses to move a checked-out branch. When it
+reports local changes, or the fast-forward refuses, leave them — never `checkout --` someone's work away.
 
 ### 7. Rebuild the installed csw from main
 
