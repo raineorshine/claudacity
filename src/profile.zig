@@ -67,19 +67,24 @@ pub fn cmdSave(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     display.ok(msg);
 }
 
-pub fn cmdUse(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
-    var result = try useWith(gpa, io, name, .{});
-    result.deinit(gpa);
+/// Switches to `name` and reports which open sessions were carried.
+pub fn cmdUse(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOptions) !void {
+    var result = try useWith(gpa, io, name, opts);
+    defer result.deinit(gpa);
+    if (result.carry) |carried| {
+        if (carried.carried > 0) display.print("Carried {d} open session(s) into '{s}'\n", .{ carried.carried, name });
+        for (carried.failed.items) |f| display.print("  not carried: {s} ({s})\n", .{ f.title, f.reason });
+    } else if (result.carry_skipped) |why| display.print("⚠️  Sessions not carried: {s}\n", .{why});
 }
 
 pub const UseOptions = struct {
-    /// Copy every open local Code session into the target profile (KTD7).
-    carry_sessions: bool = false,
+    /// Move every open local Code session into the target profile (KTD7).
+    carry_sessions: bool = true,
 };
 
 pub const UseResult = struct {
     carry: ?sessions.Result = null,
-    /// Why carry-over did not run, when it was requested.
+    /// Why carry-over failed, when it was requested and there was a profile to carry from.
     carry_skipped: ?[]const u8 = null,
 
     pub fn deinit(r: *UseResult, gpa: std.mem.Allocator) void {
@@ -182,13 +187,13 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     if (opts.carry_sessions) {
         if (cur) |c_name| {
             if (std.mem.eql(u8, c_name, name)) {
-                use_result.carry_skipped = "already on this profile";
+                // Nothing to move: the sessions are already on this profile.
             } else if (carrySessions(gpa, io, h, c_name, name)) |carried| {
                 use_result.carry = carried;
             } else |err| {
                 use_result.carry_skipped = @errorName(err);
             }
-        } else use_result.carry_skipped = "no active profile";
+        }
     }
 
     if (c_token) |token| {
@@ -402,7 +407,7 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
 
     if (try fuzzyPick(gpa, io, h, profiles, "Pick profile > ")) |chosen| {
         defer gpa.free(chosen);
-        try cmdUse(gpa, io, chosen);
+        try cmdUse(gpa, io, chosen, .{});
     }
 }
 

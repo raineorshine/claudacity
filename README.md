@@ -111,6 +111,16 @@ csw use personal
 csw pick
 ```
 
+### Open sessions follow you
+
+Each switch, including `csw pick`, moves every open local Code session into the
+profile you switch to, with its full history, and archives it in the one you
+leave, so it stays listed in Claude Desktop on the new account. Desktop's
+session processes get up to 30 seconds to finish before they are stopped; a
+session still running after that stays behind. Pass `--no-carry-sessions` to
+`csw use` to leave every session where it is, for example when one account
+belongs to an organization whose work should not cross into another.
+
 ### Desktop settings follow you
 
 Each switch carries Claude Desktop's app settings (Remote Control, keep-awake,
@@ -163,8 +173,8 @@ these local links do not copy those uploads to another account.
 
 ```
 csw save <name>    Save current sessions (Code + Desktop) as a named profile
-csw use <name>     Switch to a saved profile
-csw use <name> --carry-sessions  Switch and move every open local Code session with you
+csw use <name>     Switch to a saved profile, moving open local Code sessions with you
+csw use <name> --no-carry-sessions  Switch and leave open sessions on the old profile
 csw new <name>     Create a new empty profile slot (then: claude auth login)
 csw share <source> <target>  Share local skills and user plugins on each switch
 csw unshare <target>        Stop sharing and remove shared skill links

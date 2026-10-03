@@ -207,17 +207,19 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         return profile.cmdSave(gpa, io, try needsName(args, "save"));
     } else if (std.mem.eql(u8, cmd, "use")) {
         const name = try needsName(args, "use");
-        const carry = args.len >= 3 and std.mem.eql(u8, args[2], "--carry-sessions");
-        var result = try profile.useWith(gpa, io, name, .{ .carry_sessions = carry });
-        defer result.deinit(gpa);
-        if (result.carry) |c| {
-            display.print("Carried {d} open session(s) into '{s}'\n", .{ c.carried, name });
-            for (c.failed.items) |f| display.print("  not carried: {s} ({s})\n", .{ f.title, f.reason });
-        } else if (result.carry_skipped) |why| display.print("⚠️  Sessions not carried: {s}\n", .{why});
-        return;
+        var opts: profile.UseOptions = .{};
+        for (args[2..]) |a| {
+            if (std.mem.eql(u8, a, "--no-carry-sessions")) {
+                opts.carry_sessions = false;
+            } else {
+                display.print("❌  Unknown option for use: {s}\n", .{a});
+                return error.UnknownOption;
+            }
+        }
+        return profile.cmdUse(gpa, io, name, opts);
     } else if (std.mem.eql(u8, cmd, "switch")) {
         display.info("'switch' is deprecated, use 'use' instead");
-        return profile.cmdUse(gpa, io, try needsName(args, "switch"));
+        return profile.cmdUse(gpa, io, try needsName(args, "switch"), .{});
     } else if (std.mem.eql(u8, cmd, "new")) {
         return profile.cmdNew(gpa, io, try needsName(args, "new"));
     } else if (std.mem.eql(u8, cmd, "share") or std.mem.eql(u8, cmd, "share-skills")) {
@@ -285,7 +287,8 @@ fn printHelp() void {
         \\
         \\COMMANDS:
         \\  save <name>      Save current sessions as a named profile
-        \\  use <name> [--carry-sessions]  Switch to a saved profile; optionally move open local Code sessions with you
+        \\  use <name> [--no-carry-sessions]  Switch to a saved profile and move open local Code
+        \\                   sessions with you, unless --no-carry-sessions leaves them behind
         \\  new <name>       Create a new empty profile slot
         \\  share <source> <target>  Share local skills and plugins on each switch
         \\  unshare <target>        Stop sharing and remove shared skill links
