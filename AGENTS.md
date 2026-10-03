@@ -1,6 +1,6 @@
 # claude-switch (csw)
 
-A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved accounts, and can move open work to the next account when the active one runs out of weekly usage. This checkout is Raine's fork (`raineorshine/claude-switch`); upstream is `mtxr/claude-switch`.
+A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved accounts, and can move open work to the next account when the active one runs out of weekly usage. This checkout is Raine's fork (`raineorshine/claude-switch`); upstream is `mtxr/claude-switch`. Raine is the fork's only user and upstream is inactive, so neither constrains a change: change a default or remove a flag outright, with no compatibility alias or deprecation path.
 
 ## Gates
 
