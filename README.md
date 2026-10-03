@@ -203,7 +203,7 @@ The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:
 
 `csw usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set.
 
-Reading another profile's usage needs its saved login. csw refreshes expired logins and saves the renewed one in place; if a login can no longer be renewed, `csw usage` says the profile needs signing in again. Sign out of claude.ai in your browser, then run `csw use <name>`, `claude auth login --email <address>` and `csw save <name>`, in that order: logging in while another profile is active overwrites that profile's login.
+Reading another profile's usage needs its saved login. csw refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `csw whoami` after the next `csw usage`; if a login can no longer be renewed, `csw usage` says the profile needs signing in again. Sign out of claude.ai in your browser, then run `csw use <name>`, `claude auth login --email <address>` and `csw save <name>`, in that order: logging in while another profile is active overwrites that profile's login.
 
 ## How it works
 
@@ -223,7 +223,7 @@ csw saves Claude Code session credentials in **macOS Keychain** and moves Claude
 | Nightly schedule | `~/Library/LaunchAgents/com.github.raineorshine.csw-handoff.plist`, log in `~/Library/Application Support/csw/handoff.log` |
 
 - Account switching does not send tokens to a csw service.
-- `csw usage`, `csw next` and `csw handoff` call Anthropic's API directly (usage, login refresh, cloud-session list) with each profile's own saved login. Requests go through `curl` with the request on stdin, so tokens never appear in process arguments.
+- `csw usage`, `csw next` and `csw handoff` call Anthropic's API directly (usage, plan, login refresh, cloud-session list) with each profile's own saved login. Requests go through `curl` with the request on stdin, so tokens never appear in process arguments.
 - Both Claude Code and Claude Desktop are optional — csw works with either or both.
 - On switch, Claude Desktop is quit automatically and relaunched.
 

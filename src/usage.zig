@@ -140,6 +140,7 @@ pub fn collect(gpa: std.mem.Allocator, io: std.Io) ![]ProfileUsage {
                         @memset(t, 0);
                         gpa.free(t);
                     }
+                    oauth.syncPlan(gpa, io, name, t) catch {};
                     break :blk if (fetch(gpa, io, t)) |u| .{ .usage = u } else |_| .failed;
                 },
                 .needs_sign_in => break :blk .needs_sign_in,

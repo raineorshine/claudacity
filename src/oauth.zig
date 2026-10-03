@@ -162,6 +162,74 @@ pub fn freshAccessToken(gpa: std.mem.Allocator, io: std.Io, profile_name: []cons
     return .{ .token = (try validAccessToken(gpa, updated, now)) orelse return error.RefreshFailed };
 }
 
+pub const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
+
+/// The plan Claude Code stores as `subscriptionType`, from the profile
+/// endpoint's `organization.organization_type`; null when unrecognized.
+pub fn planFromProfile(gpa: std.mem.Allocator, body: []const u8) !?[]const u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return error.MalformedProfile;
+    defer parsed.deinit();
+    if (parsed.value != .object) return error.MalformedProfile;
+    const org = parsed.value.object.get("organization") orelse return null;
+    if (org != .object) return null;
+    const kind = stringIn(org.object, "organization_type") orelse return null;
+    const plans = [_][2][]const u8{
+        .{ "claude_max", "max" },
+        .{ "claude_pro", "pro" },
+        .{ "claude_team", "team" },
+        .{ "claude_enterprise", "enterprise" },
+    };
+    for (plans) |m| if (std.mem.eql(u8, kind, m[0])) return m[1];
+    return null;
+}
+
+/// The stored login with `subscriptionType` set to `plan` (owned), or null
+/// when it already says so.
+pub fn applyPlan(gpa: std.mem.Allocator, stored_json: []const u8, plan: []const u8) !?[]u8 {
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const stored = try std.json.parseFromSliceLeaky(std.json.Value, arena, stored_json, .{});
+    if (stored != .object) return error.MalformedLogin;
+    const o_ptr = stored.object.getPtr("claudeAiOauth") orelse return error.MalformedLogin;
+    if (o_ptr.* != .object) return error.MalformedLogin;
+    if (stringIn(o_ptr.object, "subscriptionType")) |cur| if (std.mem.eql(u8, cur, plan)) return null;
+    try o_ptr.object.put(arena, "subscriptionType", .{ .string = plan });
+    return try std.json.Stringify.valueAlloc(gpa, stored, .{});
+}
+
+/// Updates the plan in `profile_name`'s saved login from the account's current
+/// plan. A login records its plan at sign-in, so an upgrade leaves it stale.
+/// Only the saved copy is written; Claude Code owns the live entry.
+pub fn syncPlan(gpa: std.mem.Allocator, io: std.Io, profile_name: []const u8, access_token: []const u8) !void {
+    const auth = try std.fmt.allocPrint(gpa, "Bearer {s}", .{access_token});
+    defer {
+        @memset(auth, 0);
+        gpa.free(auth);
+    }
+    const resp = try http.send(gpa, io, .{
+        .url = PROFILE_URL,
+        .headers = &.{
+            .{ .name = "Authorization", .value = auth },
+            .{ .name = "anthropic-beta", .value = "oauth-2025-04-20" },
+        },
+    });
+    defer resp.deinit(gpa);
+    if (resp.status != 200) return error.ProfileRequestFailed;
+    const plan = (try planFromProfile(gpa, resp.body)) orelse return;
+
+    const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KEYCHAIN_PROFILE_PREFIX, profile_name });
+    defer gpa.free(svc);
+    const stored = try keychain.get(gpa, io, svc);
+    defer gpa.free(stored);
+    const updated = (try applyPlan(gpa, stored, plan)) orelse return;
+    defer gpa.free(updated);
+    const acct = keychain.getAccount(gpa, io, svc);
+    defer gpa.free(acct);
+    try keychain.update(gpa, io, svc, acct, updated);
+}
+
 const STORED =
     \\{"claudeAiOauth":{"accessToken":"old-at","refreshToken":"old-rt","expiresAt":1000,"scopes":["user:inference"],"subscriptionType":"max"}}
 ;
@@ -220,4 +288,27 @@ test "refreshBody carries the grant and client id" {
     const b = try refreshBody(gpa, "rt-1");
     defer gpa.free(b);
     try std.testing.expectEqualStrings("{\"grant_type\":\"refresh_token\",\"refresh_token\":\"rt-1\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\"}", b);
+}
+
+test "planFromProfile maps the organization type to Claude Code's plan name" {
+    const gpa = std.testing.allocator;
+    try std.testing.expectEqualStrings("max", (try planFromProfile(gpa,
+        \\{"account":{"email":"a@b.c"},"organization":{"organization_type":"claude_max","rate_limit_tier":"default_claude_max_20x"}}
+    )).?);
+    try std.testing.expectEqualStrings("pro", (try planFromProfile(gpa, "{\"organization\":{\"organization_type\":\"claude_pro\"}}")).?);
+    try std.testing.expect((try planFromProfile(gpa, "{\"organization\":{\"organization_type\":\"other\"}}")) == null);
+    try std.testing.expect((try planFromProfile(gpa, "{}")) == null);
+    try std.testing.expectError(error.MalformedProfile, planFromProfile(gpa, "nope"));
+}
+
+test "applyPlan rewrites a stale plan and keeps other fields" {
+    const gpa = std.testing.allocator;
+    try std.testing.expect((try applyPlan(gpa, STORED, "max")) == null);
+    const out = (try applyPlan(gpa, STORED, "pro")).?;
+    defer gpa.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, gpa, out, .{});
+    defer parsed.deinit();
+    const o = oauthObject(parsed.value).?;
+    try std.testing.expectEqualStrings("pro", stringIn(o, "subscriptionType").?);
+    try std.testing.expectEqualStrings("old-rt", stringIn(o, "refreshToken").?);
 }
