@@ -211,7 +211,7 @@ What stays behind: chats (Desktop Chat tab and mobile), and cloud sessions older
 
 The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:00, launchd runs it on wake; outside that window it switches nothing and notifies you instead.
 
-`csw usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `csw pick` shows each profile's weekly percentage the same way, beside its name.
+`csw usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `csw pick` shows each profile's email, then its weekly percentage colored the same way. Reset times read like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
 
 Reading another profile's usage needs its saved login. csw refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `csw whoami` after the next `csw usage`; if a login can no longer be renewed, `csw usage` says the profile needs signing in again. Sign out of claude.ai in your browser, then run `csw use <name>`, `claude auth login --email <address>` and `csw save <name>`, in that order: logging in while another profile is active overwrites that profile's login.
 

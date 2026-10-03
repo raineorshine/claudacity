@@ -250,13 +250,22 @@ pub fn activeWeekly(rows: []const ProfileUsage) ?Window {
     return null;
 }
 
+/// A reset time in local time, like "Thu Oct 8 @ 1pm EDT" ("1:30pm" when the minutes are not zero).
 fn formatReset(buf: []u8, epoch: i64) []const u8 {
     const c = @cImport(@cInclude("time.h"));
     var t: c.time_t = @intCast(epoch);
     var tm: c.struct_tm = undefined;
     _ = c.localtime_r(&t, &tm);
-    const n = c.strftime(buf.ptr, buf.len, "%a %b %d %H:%M", &tm);
-    return buf[0..n];
+    var day: [16]u8 = undefined;
+    var zone: [16]u8 = undefined;
+    const day_n = c.strftime(&day, day.len, "%a %b", &tm);
+    const zone_n = c.strftime(&zone, zone.len, "%Z", &tm);
+    const hour: u32 = @intCast(@mod(tm.tm_hour + 11, 12) + 1);
+    const ampm: []const u8 = if (tm.tm_hour < 12) "am" else "pm";
+    if (tm.tm_min == 0) {
+        return std.fmt.bufPrint(buf, "{s} {d} @ {d}{s} {s}", .{ day[0..day_n], @as(u32, @intCast(tm.tm_mday)), hour, ampm, zone[0..zone_n] }) catch "";
+    }
+    return std.fmt.bufPrint(buf, "{s} {d} @ {d}:{d:0>2}{s} {s}", .{ day[0..day_n], @as(u32, @intCast(tm.tm_mday)), hour, @as(u32, @intCast(tm.tm_min)), ampm, zone[0..zone_n] }) catch "";
 }
 
 /// ANSI color for a usage percentage: green, yellow, orange, then red once the profile is full.
@@ -282,12 +291,12 @@ fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
 /// One usage window's column: its percentage and reset time, or a placeholder of the
 /// same width when the API reports no window (no usage in the 5-hour window yet).
 fn formatWindow(buf: []u8, window: ?Window, color: bool) []const u8 {
-    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<25}", .{ "--", "(no active window)" }) catch "";
+    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<33}", .{ "--", "(no active window)" }) catch "";
     var p: [32]u8 = undefined;
     var t: [64]u8 = undefined;
     var r: [80]u8 = undefined;
     const resets = std.fmt.bufPrint(&r, "(resets {s})", .{formatReset(&t, w.resets_at)}) catch "";
-    return std.fmt.bufPrint(buf, "{s}  {s:<25}", .{ formatPct(&p, w.pct, color), resets }) catch "";
+    return std.fmt.bufPrint(buf, "{s}  {s:<33}", .{ formatPct(&p, w.pct, color), resets }) catch "";
 }
 
 /// The weekly column `csw pick` shows beside a profile, the same width for every state.
@@ -301,7 +310,7 @@ pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
         .no_login => "no saved login",
         .failed => "usage could not be read",
     };
-    return std.fmt.bufPrint(buf, "{s:<36}", .{text}) catch "";
+    return std.fmt.bufPrint(buf, "{s:<44}", .{text}) catch "";
 }
 
 /// Weekly labels for `csw pick`, one per profile in `names` order; null where a profile has
@@ -394,11 +403,24 @@ test "parseUsage reports a null weekly window as unknown, not 0%" {
 test "formatWindow shows a missing window as a placeholder, not a negative percentage" {
     var buf: [128]u8 = undefined;
     const missing = formatWindow(&buf, null, false);
-    try std.testing.expectEqualStrings("    --  (no active window)       ", missing);
+    try std.testing.expectEqualStrings("    --  (no active window)               ", missing);
     var buf2: [128]u8 = undefined;
     const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false);
     try std.testing.expectEqual(missing.len, present.len);
     try std.testing.expect(std.mem.startsWith(u8, present, "  6.0%  (resets "));
+}
+
+test "formatReset reads like Thu Oct 1 @ 1pm EDT" {
+    const c = @cImport({
+        @cInclude("stdlib.h");
+        @cInclude("time.h");
+    });
+    _ = c.setenv("TZ", "America/New_York", 1);
+    c.tzset();
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("Thu Oct 1 @ 1pm EDT", formatReset(&buf, 1790874000));
+    try std.testing.expectEqualStrings("Thu Oct 1 @ 1:30pm EDT", formatReset(&buf, 1790874000 + 1800));
+    try std.testing.expectEqualStrings("Fri Oct 2 @ 12am EDT", formatReset(&buf, 1790874000 + 11 * 3600));
 }
 
 test "weeklyLabel keeps one width across states" {

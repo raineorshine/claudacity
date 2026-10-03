@@ -640,16 +640,31 @@ pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const
         lines.deinit(gpa);
     }
 
-    for (profiles, 0..) |p, i| {
-        const email = try profileJsonEmailIn(gpa, base, p);
-        defer if (email) |e| gpa.free(e);
+    const emails = try gpa.alloc(?[]const u8, profiles.len);
+    @memset(emails, null);
+    defer {
+        for (emails) |e| if (e) |s| gpa.free(s);
+        gpa.free(emails);
+    }
+    var email_width: usize = 0;
+    for (profiles, emails) |p, *e| {
+        e.* = try profileJsonEmailIn(gpa, base, p);
+        if (e.*) |s| email_width = @max(email_width, s.len);
+    }
+
+    // name, email, then usage; emails are padded so the usage column lines up.
+    for (profiles, emails, 0..) |p, email, i| {
         const label: ?[]const u8 = if (labels) |ls| ls[i] else null;
         var line: std.ArrayList(u8) = .empty;
         errdefer line.deinit(gpa);
         try line.appendSlice(gpa, p);
         if (label != null or email != null) try line.appendNTimes(gpa, ' ', width - p.len);
+        if (email != null or (label != null and email_width > 0)) {
+            const e = email orelse "";
+            try line.print(gpa, "\t{s}", .{e});
+            if (label != null) try line.appendNTimes(gpa, ' ', email_width - e.len);
+        }
         if (label) |l| try line.print(gpa, "\t{s}", .{l});
-        if (email) |e| try line.print(gpa, "\t{s}", .{e});
         try lines.append(gpa, try line.toOwnedSlice(gpa));
     }
     return lines.toOwnedSlice(gpa);
@@ -870,8 +885,15 @@ test "pickerLinesIn alinha nome e email" {
         for (labeled) |l| alloc.free(l);
         alloc.free(labeled);
     }
-    try std.testing.expectEqualStrings("personal\t7d 10%", labeled[0]);
+    try std.testing.expectEqualStrings("personal\t           \t7d 10%", labeled[0]);
     try std.testing.expectEqualStrings("work    \tme@work.com", labeled[1]);
+
+    const both = try pickerLinesIn(alloc, base, &.{"work"}, &.{"7d 10%"});
+    defer {
+        for (both) |l| alloc.free(l);
+        alloc.free(both);
+    }
+    try std.testing.expectEqualStrings("work\tme@work.com\t7d 10%", both[0]);
     try std.testing.expectEqualStrings("personal", pickerName(labeled[0]));
 }
 
