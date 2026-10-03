@@ -14,16 +14,17 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 
 ## Working rules
 
-- Never run a real switch, carry-over or cloud continuation against the user's profiles to test something. Build the case in temp directories; the first real run is the user's.
+- Never run a real switch, carry-over or cloud continuation against the user's profiles to test something. Build the case in temp directories; the first real run is the user's. To see what `csw pick` hands the picker without switching, put a stub `sk` first on `PATH` that saves its stdin and prints nothing: an empty selection exits before any switch.
 - Reading saved logins (even hashed, to compare them) or calling Anthropic's API with them, rewriting `~/.claude.<profile>.json`, writing Desktop's session records, teleporting cloud sessions, and reading the contents of files in Desktop's data directory (`claude_desktop_config.json` included) are blocked by auto mode until the user approves. Listing that directory is allowed; for a config's shape, hand the user a keys-only `jq` command (`jq -r '.preferences | keys[]'`). Ask before relying on them, or hand the user a script to run.
 - Before switching or handing off, check that each profile holds its own account (`csw whoami`, `csw usage`). A `claude auth login` run under the wrong profile gets saved over that profile's login by the next switch; repair it first (`docs/claude-internals.md`, Logins).
 - The installed `~/.local/bin/csw` is built from `main` by `ship`, so it lacks whatever this branch adds. Use this checkout's `zig-out/bin/csw`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under csw and forces a fresh sign-in.
-- `csw usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel.
+- `csw usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel. `read_terminal` strips them too, so only the user can confirm them. `sk` and `fzf` show colors only with `--ansi`.
 - Secrets never go in process arguments: requests go through `exec.run` with the request on stdin (`src/http.zig`). `std.process.run` always ignores stdin in Zig 0.16, so piping needs `std.process.spawn` with `.stdin = .pipe` (`src/exec.zig`).
 
 ## Zig tests
 
+- `usage.collect` reads profiles concurrently through `std.Io.Group`, so code it reaches must keep to its own profile's Keychain entries and files. The wait is network-bound: about one profile's requests, not the sum.
 - Tests that spawn a process use `std.testing.io`; `std.Options.debug_io` fails the spawn with `OutOfMemory`.
 - Code reached from a test must not write to stdout: the test runner speaks to the build server over stdout, and the run hangs with no error. Guard prints with `builtin.is_test`.
 - External effects in orchestration code go through an injected interface (`handoff.Effects`) so ordering is tested with fakes.
