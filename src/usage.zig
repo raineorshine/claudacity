@@ -116,40 +116,59 @@ pub const ProfileUsage = struct {
     state: State,
 };
 
+pub const CollectOptions = struct {
+    /// Refresh each saved login's plan from the account's current plan, at the cost of one
+    /// more request per profile.
+    sync_plan: bool = true,
+};
+
 /// Reads usage for every saved profile, refreshing expired logins (KTD2).
+/// Profiles are read concurrently, so the wait is about one profile's, not the sum.
 /// Caller owns the slice and each name.
 pub fn collect(gpa: std.mem.Allocator, io: std.Io) ![]ProfileUsage {
+    return collectWith(gpa, io, .{});
+}
+
+pub fn collectWith(gpa: std.mem.Allocator, io: std.Io, opts: CollectOptions) ![]ProfileUsage {
     const names = try profile.list(gpa);
     defer gpa.free(names);
     const current = try profile.current(gpa);
     defer if (current) |cur| gpa.free(cur);
 
-    var rows: std.ArrayList(ProfileUsage) = .empty;
-    errdefer {
-        for (rows.items) |r| gpa.free(r.name);
-        rows.deinit(gpa);
-    }
-    for (names) |name| {
-        defer gpa.free(name);
-        const active = if (current) |cur| std.mem.eql(u8, cur, name) else false;
-        const state: State = blk: {
-            const login = oauth.freshAccessToken(gpa, io, name, active) catch break :blk .failed;
-            switch (login) {
-                .token => |t| {
-                    defer {
-                        @memset(t, 0);
-                        gpa.free(t);
-                    }
-                    oauth.syncPlan(gpa, io, name, t) catch {};
-                    break :blk if (fetch(gpa, io, t)) |u| .{ .usage = u } else |_| .failed;
-                },
-                .needs_sign_in => break :blk .needs_sign_in,
-                .missing => break :blk .no_login,
-            }
+    const rows = gpa.alloc(ProfileUsage, names.len) catch |e| {
+        for (names) |n| gpa.free(n);
+        return e;
+    };
+    for (names, rows) |name, *row| {
+        row.* = .{
+            .name = name,
+            .active = if (current) |cur| std.mem.eql(u8, cur, name) else false,
+            .state = .failed,
         };
-        try rows.append(gpa, .{ .name = try gpa.dupe(u8, name), .active = active, .state = state });
     }
-    return rows.toOwnedSlice(gpa);
+
+    var group: std.Io.Group = .init;
+    for (rows) |*row| group.async(io, readState, .{ gpa, io, row, opts });
+    group.await(io) catch {};
+    return rows;
+}
+
+fn readState(gpa: std.mem.Allocator, io: std.Io, row: *ProfileUsage, opts: CollectOptions) void {
+    row.state = blk: {
+        const login = oauth.freshAccessToken(gpa, io, row.name, row.active) catch break :blk .failed;
+        switch (login) {
+            .token => |t| {
+                defer {
+                    @memset(t, 0);
+                    gpa.free(t);
+                }
+                if (opts.sync_plan) oauth.syncPlan(gpa, io, row.name, t) catch {};
+                break :blk if (fetch(gpa, io, t)) |u| .{ .usage = u } else |_| .failed;
+            },
+            .needs_sign_in => break :blk .needs_sign_in,
+            .missing => break :blk .no_login,
+        }
+    };
 }
 
 pub fn freeRows(gpa: std.mem.Allocator, rows: []ProfileUsage) void {
@@ -271,6 +290,45 @@ fn formatWindow(buf: []u8, window: ?Window, color: bool) []const u8 {
     return std.fmt.bufPrint(buf, "{s}  {s:<25}", .{ formatPct(&p, w.pct, color), resets }) catch "";
 }
 
+/// The weekly column `csw pick` shows beside a profile, the same width for every state.
+pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
+    const text: []const u8 = switch (state) {
+        .usage => |u| {
+            var w: [128]u8 = undefined;
+            return std.fmt.bufPrint(buf, "7d {s}", .{formatWindow(&w, u.seven_day, color)}) catch "";
+        },
+        .needs_sign_in => "needs signing in again",
+        .no_login => "no saved login",
+        .failed => "usage could not be read",
+    };
+    return std.fmt.bufPrint(buf, "{s:<36}", .{text}) catch "";
+}
+
+/// Weekly labels for `csw pick`, one per profile in `names` order; null where a profile has
+/// no row. Skips the plan refresh, which pick does not show. Caller frees with `freeLabels`.
+pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u8) ![]?[]const u8 {
+    const rows = try collectWith(gpa, io, .{ .sync_plan = false });
+    defer freeRows(gpa, rows);
+    const color = useColor();
+    const labels = try gpa.alloc(?[]const u8, names.len);
+    @memset(labels, null);
+    errdefer freeLabels(gpa, labels);
+    for (names, labels) |name, *label| {
+        for (rows) |row| {
+            if (!std.mem.eql(u8, row.name, name)) continue;
+            var buf: [192]u8 = undefined;
+            label.* = try gpa.dupe(u8, weeklyLabel(&buf, row.state, color));
+            break;
+        }
+    }
+    return labels;
+}
+
+pub fn freeLabels(gpa: std.mem.Allocator, labels: []?[]const u8) void {
+    for (labels) |l| if (l) |s| gpa.free(s);
+    gpa.free(labels);
+}
+
 pub fn printRows(rows: []const ProfileUsage) void {
     const color = useColor();
     for (rows) |row| {
@@ -341,6 +399,15 @@ test "formatWindow shows a missing window as a placeholder, not a negative perce
     const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false);
     try std.testing.expectEqual(missing.len, present.len);
     try std.testing.expect(std.mem.startsWith(u8, present, "  6.0%  (resets "));
+}
+
+test "weeklyLabel keeps one width across states" {
+    var b1: [192]u8 = undefined;
+    var b2: [192]u8 = undefined;
+    const read = weeklyLabel(&b1, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false);
+    const failed = weeklyLabel(&b2, .failed, false);
+    try std.testing.expect(std.mem.startsWith(u8, read, "7d  77.0%  (resets "));
+    try std.testing.expectEqual(read.len, failed.len);
 }
 
 test "parseUsage rejects non-JSON" {

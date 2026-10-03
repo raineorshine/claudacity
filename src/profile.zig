@@ -9,6 +9,7 @@ const paths = @import("paths.zig");
 const skills = @import("skills.zig");
 const plugins = @import("plugins.zig");
 const sessions = @import("sessions.zig");
+const usage = @import("usage.zig");
 
 const c = @cImport({
     @cInclude("dirent.h");
@@ -292,7 +293,7 @@ pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !voi
             display.err("No profiles saved yet.");
             return error.NoProfiles;
         }
-        const chosen = try fuzzyPick(gpa, io, h, profiles, "Delete profile > ");
+        const chosen = try fuzzyPick(gpa, io, h, profiles, null, "Delete profile > ");
         break :blk chosen orelse {
             display.err("No profile selected");
             return error.NoneSelected;
@@ -405,7 +406,10 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
         return error.NoProfiles;
     }
 
-    if (try fuzzyPick(gpa, io, h, profiles, "Pick profile > ")) |chosen| {
+    const labels = try usage.pickerLabels(gpa, io, profiles);
+    defer usage.freeLabels(gpa, labels);
+
+    if (try fuzzyPick(gpa, io, h, profiles, labels, "Pick profile > ")) |chosen| {
         defer gpa.free(chosen);
         try cmdUse(gpa, io, chosen, .{});
     }
@@ -624,7 +628,9 @@ fn ensureCurrentSavedIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) !v
 }
 
 /// Linhas do picker: nome alinhado + tab + email (se houver). Caller libera.
-pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const []const u8) ![]const []const u8 {
+/// One picker line per profile: the name, then its label (weekly usage in `csw pick`) when
+/// given, then the email.
+pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8) ![]const []const u8 {
     var width: usize = 0;
     for (profiles) |p| width = @max(width, p.len);
 
@@ -634,14 +640,17 @@ pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const
         lines.deinit(gpa);
     }
 
-    for (profiles) |p| {
+    for (profiles, 0..) |p, i| {
         const email = try profileJsonEmailIn(gpa, base, p);
         defer if (email) |e| gpa.free(e);
-        const line = if (email) |e|
-            try std.fmt.allocPrint(gpa, "{[name]s: <[w]}\t{[email]s}", .{ .name = p, .w = width, .email = e })
-        else
-            try gpa.dupe(u8, p);
-        try lines.append(gpa, line);
+        const label: ?[]const u8 = if (labels) |ls| ls[i] else null;
+        var line: std.ArrayList(u8) = .empty;
+        errdefer line.deinit(gpa);
+        try line.appendSlice(gpa, p);
+        if (label != null or email != null) try line.appendNTimes(gpa, ' ', width - p.len);
+        if (label) |l| try line.print(gpa, "\t{s}", .{l});
+        if (email) |e| try line.print(gpa, "\t{s}", .{e});
+        try lines.append(gpa, try line.toOwnedSlice(gpa));
     }
     return lines.toOwnedSlice(gpa);
 }
@@ -652,11 +661,11 @@ pub fn pickerName(line: []const u8) []const u8 {
     return std.mem.trim(u8, line[0..end], " \t\n\r");
 }
 
-fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, prompt: []const u8) !?[]const u8 {
+fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8, prompt: []const u8) !?[]const u8 {
     const cmd = try fuzzyCmd(gpa, io);
     defer gpa.free(cmd);
 
-    const items = try pickerLinesIn(gpa, base, profiles);
+    const items = try pickerLinesIn(gpa, base, profiles, labels);
     defer {
         for (items) |l| gpa.free(l);
         gpa.free(items);
@@ -664,7 +673,7 @@ fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []c
 
     // stdin=pipe (we write items), stdout=pipe (we read selection), stderr=inherit (sk renders UI to terminal)
     var child = try std.process.spawn(io, .{
-        .argv = &.{ cmd, "--prompt", prompt },
+        .argv = &.{ cmd, "--ansi", "--prompt", prompt },
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .inherit,
@@ -848,13 +857,22 @@ test "pickerLinesIn alinha nome e email" {
     _ = std.c.write(fd, json.ptr, json.len);
     _ = std.c.close(fd);
 
-    const lines = try pickerLinesIn(alloc, base, &.{ "personal", "work" });
+    const lines = try pickerLinesIn(alloc, base, &.{ "personal", "work" }, null);
     defer {
         for (lines) |l| alloc.free(l);
         alloc.free(lines);
     }
     try std.testing.expectEqualStrings("personal", lines[0]);
     try std.testing.expectEqualStrings("work    \tme@work.com", lines[1]);
+
+    const labeled = try pickerLinesIn(alloc, base, &.{ "personal", "work" }, &.{ "7d 10%", null });
+    defer {
+        for (labeled) |l| alloc.free(l);
+        alloc.free(labeled);
+    }
+    try std.testing.expectEqualStrings("personal\t7d 10%", labeled[0]);
+    try std.testing.expectEqualStrings("work    \tme@work.com", labeled[1]);
+    try std.testing.expectEqualStrings("personal", pickerName(labeled[0]));
 }
 
 test "pickerName extrai nome da linha" {
