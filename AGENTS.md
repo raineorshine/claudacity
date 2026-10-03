@@ -27,6 +27,7 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 - `usage.collect` reads profiles concurrently through `std.Io.Group`, so code it reaches must keep to its own profile's Keychain entries and files. The wait is network-bound: about one profile's requests, not the sum.
 - Tests that spawn a process use `std.testing.io`; `std.Options.debug_io` fails the spawn with `OutOfMemory`.
 - Code reached from a test must not write to stdout: the test runner speaks to the build server over stdout, and the run hangs with no error. Guard prints with `builtin.is_test`.
+- Times print in the Mac's local zone (`localtime_r`, `%Z`). A test that checks a formatted time pins the zone with `setenv("TZ", …)` and `tzset()` so it passes in any zone; to see another zone from the binary, run it with `TZ=Asia/Tokyo`.
 - External effects in orchestration code go through an injected interface (`handoff.Effects`) so ordering is tested with fakes.
 
 ## Docs
