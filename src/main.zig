@@ -10,6 +10,7 @@ const usage = @import("usage.zig");
 const handoff = @import("handoff.zig");
 const schedule = @import("schedule.zig");
 const envs = @import("envs.zig");
+const marketplaces = @import("marketplaces.zig");
 
 // Re-exporta os módulos para que `zig build test` colete todos os test blocks.
 comptime {
@@ -32,6 +33,7 @@ comptime {
     _ = @import("schedule.zig");
     _ = @import("json.zig");
     _ = @import("envs.zig");
+    _ = @import("marketplaces.zig");
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
@@ -284,6 +286,12 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
             }
         }
         return envs.cmdSync(gpa, io, opts);
+    } else if (std.mem.eql(u8, cmd, "marketplaces")) {
+        if (args.len != 2 or !std.mem.eql(u8, args[1], "sync")) {
+            display.print("❌  Usage: claudacity marketplaces sync\n", .{});
+            return error.MissingArg;
+        }
+        return marketplaces.cmdSync(gpa, io);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         return schedule.cmdSchedule(gpa, io, if (args.len >= 2) args[1] else null);
     } else if (std.mem.eql(u8, cmd, "logout-all")) {
@@ -322,6 +330,8 @@ fn printHelp() void {
         \\                   local sessions, switch to the next profile, and notify
         \\  envs sync [--from <profile>] [--dry-run]  Copy cloud environments (network access,
         \\                   env vars, setup script) from a profile (default: active) to the others
+        \\  marketplaces sync  Re-sync the active account's claude.ai plugin marketplaces from
+        \\                   their repos (use and handoff do this on every switch)
         \\  schedule [install|uninstall|status]  Run claudacity handoff every night at 22:00 (launchd)
         \\  pick             Interactive profile picker (sk / fzf)
         \\  update [--verbose]  Update claudacity to the latest release

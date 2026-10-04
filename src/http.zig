@@ -92,6 +92,51 @@ pub fn send(gpa: std.mem.Allocator, io: std.Io, req: Request) !Response {
     return parseOutput(gpa, result.stdout);
 }
 
+/// Sends `req` with Zig's own HTTP client instead of curl. claude.ai's
+/// Cloudflare answers macOS curl with a challenge page whatever its headers,
+/// and lets this client through. Secrets stay in-process. The request runs
+/// concurrently so `req.timeout_s` can bound it; with no concurrency available
+/// it runs inline, unbounded.
+pub fn sendDirect(gpa: std.mem.Allocator, io: std.Io, req: Request) !Response {
+    const Outcome = union(enum) {
+        done: anyerror!Response,
+        timed_out: std.Io.Cancelable!void,
+    };
+    var buf: [2]Outcome = undefined;
+    var select = std.Io.Select(Outcome).init(io, &buf);
+    select.concurrent(.done, fetch, .{ gpa, io, req }) catch return fetch(gpa, io, req);
+    select.async(.timed_out, std.Io.sleep, .{ io, std.Io.Duration.fromSeconds(req.timeout_s), .awake });
+    const first = try select.await();
+    while (select.cancel()) |late| switch (late) {
+        .done => |r| if (r) |resp| resp.deinit(gpa) else |_| {},
+        .timed_out => {},
+    };
+    return switch (first) {
+        .done => |r| r,
+        .timed_out => error.Timeout,
+    };
+}
+
+fn fetch(gpa: std.mem.Allocator, io: std.Io, req: Request) anyerror!Response {
+    var client: std.http.Client = .{ .allocator = gpa, .io = io };
+    defer client.deinit();
+    const extra = try gpa.alloc(std.http.Header, req.headers.len);
+    defer gpa.free(extra);
+    for (req.headers, extra) |h, *e| e.* = .{ .name = h.name, .value = h.value };
+    var body: std.Io.Writer.Allocating = .init(gpa);
+    defer body.deinit();
+    const result = try client.fetch(.{
+        .location = .{ .url = req.url },
+        .method = std.meta.stringToEnum(std.http.Method, req.method) orelse return error.UnsupportedMethod,
+        .payload = req.body,
+        .response_writer = &body.writer,
+        .keep_alive = false,
+        .headers = .{ .user_agent = .{ .override = USER_AGENT } },
+        .extra_headers = extra,
+    });
+    return .{ .status = @intFromEnum(result.status), .body = try body.toOwnedSlice() };
+}
+
 test "curlConfig keeps the token out of argv and escapes values" {
     const gpa = std.testing.allocator;
     const cfg = try curlConfig(gpa, .{

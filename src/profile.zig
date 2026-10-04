@@ -10,6 +10,7 @@ const skills = @import("skills.zig");
 const plugins = @import("plugins.zig");
 const sessions = @import("sessions.zig");
 const usage = @import("usage.zig");
+const marketplaces = @import("marketplaces.zig");
 
 const c = @cImport({
     @cInclude("dirent.h");
@@ -207,6 +208,8 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     try switchLinksIn(gpa, h, name);
     try desktop.swap(gpa, cur, name);
     if (cur) |c_name| carryDesktopSettings(gpa, io, h, c_name, name);
+    // Desktop is quit, so its cookies are settled; sync before relaunching it.
+    marketplaces.syncAfterSwitch(gpa, io, h, name);
     if (desktop.hasLiveData(gpa)) desktop.launch(gpa, io);
 
     const msg = try std.fmt.allocPrint(gpa, "Switched to '{s}'", .{name});

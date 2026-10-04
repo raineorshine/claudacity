@@ -150,23 +150,53 @@ pub fn swapIn(gpa: std.mem.Allocator, base: []const u8, current_name: ?[]const u
 }
 
 pub fn getSessionKeyWithKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key: []const u8) ![]const u8 {
+    return readSessionKeyIn(gpa, base, raw_key) catch |err| {
+        switch (err) {
+            error.CookiesDbNotFound => display.err("Cookies DB não encontrado"),
+            error.SessionKeyNotFound => display.err("Claude Desktop: cookie sessionKey não encontrado"),
+            error.TokenNotFound => display.err("Claude Desktop: token não encontrado no cookie"),
+            else => {},
+        }
+        return err;
+    };
+}
+
+/// The claude.ai session cookie of whichever account the live Desktop data
+/// directory under `base` is signed in to, without printing anything.
+pub fn sessionKeyIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) ![]const u8 {
+    const raw_key = try keychain.get(gpa, io, KEYCHAIN_DESKTOP);
+    defer gpa.free(raw_key);
+    return readSessionKeyIn(gpa, base, raw_key);
+}
+
+/// Opens the cookie database as immutable so the read works while Desktop
+/// holds it open.
+fn readSessionKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key: []const u8) ![]const u8 {
     const desktop_dir = try paths.desktopDirIn(gpa, base);
     defer gpa.free(desktop_dir);
     const cookies_path = try std.fs.path.join(gpa, &.{ desktop_dir, "Cookies" });
     defer gpa.free(cookies_path);
 
-    if (!pathExists(gpa, cookies_path)) {
-        display.err("Cookies DB não encontrado");
-        return error.CookiesDbNotFound;
-    }
+    if (!pathExists(gpa, cookies_path)) return error.CookiesDbNotFound;
 
     const key = crypto.deriveKey(raw_key);
 
-    const db_path_z = try gpa.dupeZ(u8, cookies_path);
+    var uri: std.ArrayList(u8) = .empty;
+    defer uri.deinit(gpa);
+    try uri.appendSlice(gpa, "file:");
+    for (cookies_path) |ch| switch (ch) {
+        '%' => try uri.appendSlice(gpa, "%25"),
+        '?' => try uri.appendSlice(gpa, "%3F"),
+        '#' => try uri.appendSlice(gpa, "%23"),
+        else => try uri.append(gpa, ch),
+    };
+    try uri.appendSlice(gpa, "?immutable=1");
+    const db_path_z = try gpa.dupeZ(u8, uri.items);
     defer gpa.free(db_path_z);
 
     var db: ?*c.sqlite3 = null;
-    if (c.sqlite3_open_v2(db_path_z, &db, c.SQLITE_OPEN_READONLY | c.SQLITE_OPEN_NOMUTEX, null) != c.SQLITE_OK) {
+    if (c.sqlite3_open_v2(db_path_z, &db, c.SQLITE_OPEN_READONLY | c.SQLITE_OPEN_NOMUTEX | c.SQLITE_OPEN_URI, null) != c.SQLITE_OK) {
+        _ = c.sqlite3_close(db);
         return error.SqliteOpenFailed;
     }
     defer _ = c.sqlite3_close(db);
@@ -176,10 +206,7 @@ pub fn getSessionKeyWithKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key:
     if (c.sqlite3_prepare_v2(db, query, -1, &stmt, null) != c.SQLITE_OK) return error.SqlitePrepFailed;
     defer _ = c.sqlite3_finalize(stmt);
 
-    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) {
-        display.err("Claude Desktop: cookie sessionKey não encontrado");
-        return error.SessionKeyNotFound;
-    }
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return error.SessionKeyNotFound;
 
     const blob_ptr = c.sqlite3_column_blob(stmt, 0);
     const blob_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
@@ -188,10 +215,7 @@ pub fn getSessionKeyWithKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key:
     const decrypted = try crypto.decryptV10(gpa, encrypted, key);
     defer gpa.free(decrypted);
 
-    const idx = std.mem.indexOf(u8, decrypted, "sk-ant") orelse {
-        display.err("Claude Desktop: token não encontrado no cookie");
-        return error.TokenNotFound;
-    };
+    const idx = std.mem.indexOf(u8, decrypted, "sk-ant") orelse return error.TokenNotFound;
     return gpa.dupe(u8, decrypted[idx..]);
 }
 

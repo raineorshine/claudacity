@@ -110,6 +110,17 @@ other profile: matched by name, created when missing, updated when they differ.
 Environments only a target has are left alone. `--from <profile>` picks another
 source and `--dry-run` shows the plan without writing.
 
+### claude.ai plugin marketplaces stay current
+
+A plugin marketplace added on claude.ai (Customize → Plugins → Add marketplace)
+does not re-sync when its GitHub repo changes, yet cloud sessions, and Desktop
+sessions loading `<plugin>@synced`, run claude.ai's copy. Each switch therefore
+re-syncs every claude.ai marketplace of the account you switch to, the same as
+its "Check for updates" button, and prints the commit each one now holds.
+`claudacity marketplaces sync` does the same for the active account without
+switching. It signs in with the claude.ai session that account's Claude Desktop
+holds; a failure only warns and never stops the switch.
+
 ### Skills and plugins in a new profile
 
 `claudacity new` creates an empty `~/.claude.<profile>/` directory. Claude Code user
@@ -170,6 +181,7 @@ claudacity next           Show which profile a switch would move to, and why
 claudacity handoff        Move the day's work to the next account (see below)
 claudacity schedule       install | uninstall | status — run claudacity handoff nightly at 22:00
 claudacity envs sync      Copy cloud environments from the active profile to the others
+claudacity marketplaces sync  Re-sync the active account's claude.ai plugin marketplaces
 ```
 
 ## Nightly account handoff
@@ -216,6 +228,7 @@ claudacity saves Claude Code session credentials in **macOS Keychain** and moves
 
 - Account switching does not send tokens to a claudacity service.
 - `claudacity usage`, `claudacity next`, `claudacity handoff` and `claudacity envs sync` call Anthropic's API directly (usage, plan, login refresh, cloud-session list, cloud environments) with each profile's own saved login. Requests go through `curl` with the request on stdin, so tokens never appear in process arguments.
+- `claudacity use`, `claudacity handoff` and `claudacity marketplaces sync` call claude.ai's marketplace routes with the claude.ai session cookie from the account's own Claude Desktop data, decrypted in-process. These requests use Zig's HTTP client, because claude.ai's Cloudflare answers curl with a challenge page.
 - Both Claude Code and Claude Desktop are optional — claudacity works with either or both.
 - On switch, Claude Desktop is quit automatically and relaunched.
 
