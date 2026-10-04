@@ -9,6 +9,7 @@ const profile = @import("profile.zig");
 const usage = @import("usage.zig");
 const handoff = @import("handoff.zig");
 const schedule = @import("schedule.zig");
+const envs = @import("envs.zig");
 
 // Re-exporta os módulos para que `zig build test` colete todos os test blocks.
 comptime {
@@ -30,6 +31,7 @@ comptime {
     _ = @import("handoff.zig");
     _ = @import("schedule.zig");
     _ = @import("json.zig");
+    _ = @import("envs.zig");
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
@@ -263,6 +265,25 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
             }
         }
         return handoff.cmdHandoff(gpa, io, opts);
+    } else if (std.mem.eql(u8, cmd, "envs")) {
+        if (args.len < 2 or !std.mem.eql(u8, args[1], "sync")) {
+            display.print("❌  Usage: csw envs sync [--from <profile>] [--dry-run]\n", .{});
+            return error.MissingArg;
+        }
+        var opts: envs.Options = .{};
+        var i: usize = 2;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--dry-run")) {
+                opts.dry_run = true;
+            } else if (std.mem.eql(u8, args[i], "--from") and i + 1 < args.len) {
+                i += 1;
+                opts.from = args[i];
+            } else {
+                display.print("❌  Unknown option for envs sync: {s}\n", .{args[i]});
+                return error.UnknownOption;
+            }
+        }
+        return envs.cmdSync(gpa, io, opts);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
         return schedule.cmdSchedule(gpa, io, if (args.len >= 2) args[1] else null);
     } else if (std.mem.eql(u8, cmd, "logout-all")) {
@@ -299,6 +320,8 @@ fn printHelp() void {
         \\  next             Show which profile a switch would move to, and why
         \\  handoff [--dry-run] [--force]  At 90%+ weekly usage: hand off cloud sessions, carry
         \\                   local sessions, switch to the next profile, and notify
+        \\  envs sync [--from <profile>] [--dry-run]  Copy cloud environments (network access,
+        \\                   env vars, setup script) from a profile (default: active) to the others
         \\  schedule [install|uninstall|status]  Run csw handoff every night at 22:00 (launchd)
         \\  pick             Interactive profile picker (sk / fzf)
         \\  update [--verbose]  Update csw to the latest release

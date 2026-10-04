@@ -129,6 +129,15 @@ profile you leave into the one you switch to, so the last change wins in every
 profile. Sign-ins, the Remote Control connection and settings Desktop takes
 from an account's organization stay with each profile.
 
+### Cloud environments
+
+Claude Code cloud environments (allowed network hosts, environment variables,
+setup script) belong to each account, so a host allowed on one is still blocked
+on the others. `csw envs sync` copies the active profile's environments to every
+other profile: matched by name, created when missing, updated when they differ.
+Environments only a target has are left alone. `--from <profile>` picks another
+source and `--dry-run` shows the plan without writing.
+
 ### Skills and plugins in a new profile
 
 `csw new` creates an empty `~/.claude.<profile>/` directory. Claude Code user
@@ -188,6 +197,7 @@ csw usage          Show 5-hour and weekly usage for every profile
 csw next           Show which profile a switch would move to, and why
 csw handoff        Move the day's work to the next account (see below)
 csw schedule       install | uninstall | status — run csw handoff nightly at 22:00
+csw envs sync      Copy cloud environments from the active profile to the others
 ```
 
 ## Nightly account handoff
@@ -233,7 +243,7 @@ csw saves Claude Code session credentials in **macOS Keychain** and moves Claude
 | Nightly schedule | `~/Library/LaunchAgents/com.github.raineorshine.csw-handoff.plist`, log in `~/Library/Application Support/csw/handoff.log` |
 
 - Account switching does not send tokens to a csw service.
-- `csw usage`, `csw next` and `csw handoff` call Anthropic's API directly (usage, plan, login refresh, cloud-session list) with each profile's own saved login. Requests go through `curl` with the request on stdin, so tokens never appear in process arguments.
+- `csw usage`, `csw next`, `csw handoff` and `csw envs sync` call Anthropic's API directly (usage, plan, login refresh, cloud-session list, cloud environments) with each profile's own saved login. Requests go through `curl` with the request on stdin, so tokens never appear in process arguments.
 - Both Claude Code and Claude Desktop are optional — csw works with either or both.
 - On switch, Claude Desktop is quit automatically and relaunched.
 
