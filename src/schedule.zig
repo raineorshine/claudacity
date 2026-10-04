@@ -1,13 +1,13 @@
-//! schedule.zig — `csw schedule install|uninstall|status`: the 22:00 launchd agent.
+//! schedule.zig — `claudacity schedule install|uninstall|status`: the 22:00 launchd agent.
 
 const std = @import("std");
 const display = @import("display.zig");
 const exec = @import("exec.zig");
 const paths = @import("paths.zig");
 
-pub const LABEL = "com.github.raineorshine.csw-handoff";
+pub const LABEL = "com.github.raineorshine.claudacity-handoff";
 /// Directories the unattended run needs besides claude's: git and its credential
-/// helpers for the cloud-session clones, plus the system tools csw calls.
+/// helpers for the cloud-session clones, plus the system tools claudacity calls.
 const BASE_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
 fn xmlEscape(gpa: std.mem.Allocator, s: []const u8) ![]u8 {
@@ -119,7 +119,7 @@ pub fn isLoaded(gpa: std.mem.Allocator, io: std.Io) !bool {
 
 pub fn install(gpa: std.mem.Allocator, io: std.Io) !void {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const csw = try selfPath(&buf);
+    const exe = try selfPath(&buf);
     const cdir = claudeDir(gpa, io) catch {
         display.err("claude not found on PATH; install Claude Code first.");
         return error.ClaudeNotFound;
@@ -127,13 +127,13 @@ pub fn install(gpa: std.mem.Allocator, io: std.Io) !void {
     defer gpa.free(cdir);
     const h = try paths.home(gpa);
     defer gpa.free(h);
-    const log_dir = try std.fs.path.join(gpa, &.{ h, "Library", "Application Support", "csw" });
+    const log_dir = try std.fs.path.join(gpa, &.{ h, "Library", "Application Support", "claudacity" });
     defer gpa.free(log_dir);
     try std.Io.Dir.cwd().createDirPath(io, log_dir);
     const log = try std.fs.path.join(gpa, &.{ log_dir, "handoff.log" });
     defer gpa.free(log);
 
-    const text = try plist(gpa, csw, cdir, log);
+    const text = try plist(gpa, exe, cdir, log);
     defer gpa.free(text);
     const p = try plistPath(gpa);
     defer gpa.free(p);
@@ -170,7 +170,7 @@ pub fn status(gpa: std.mem.Allocator, io: std.Io) !void {
     if (try isLoaded(gpa, io)) {
         display.print("Nightly handoff: scheduled daily at 22:00 ({s}).\n", .{LABEL});
     } else {
-        display.print("Nightly handoff: not scheduled. Run: csw schedule install\n", .{});
+        display.print("Nightly handoff: not scheduled. Run: claudacity schedule install\n", .{});
     }
 }
 
@@ -179,23 +179,23 @@ pub fn cmdSchedule(gpa: std.mem.Allocator, io: std.Io, sub: ?[]const u8) !void {
     if (std.mem.eql(u8, s, "install")) return install(gpa, io);
     if (std.mem.eql(u8, s, "uninstall")) return uninstall(gpa, io);
     if (std.mem.eql(u8, s, "status")) return status(gpa, io);
-    display.print("❌  Usage: csw schedule [install|uninstall|status]\n", .{});
+    display.print("❌  Usage: claudacity schedule [install|uninstall|status]\n", .{});
     return error.UnknownOption;
 }
 
-test "plist runs csw handoff --scheduled at 22:00 with claude on PATH" {
+test "plist runs claudacity handoff --scheduled at 22:00 with claude on PATH" {
     const gpa = std.testing.allocator;
-    const text = try plist(gpa, "/Users/a b/.local/bin/csw", "/Users/a b/.local/bin", "/tmp/h.log");
+    const text = try plist(gpa, "/Users/a b/.local/bin/claudacity", "/Users/a b/.local/bin", "/tmp/h.log");
     defer gpa.free(text);
     try std.testing.expect(std.mem.indexOf(u8, text, "<string>" ++ LABEL ++ "</string>") != null);
-    try std.testing.expect(std.mem.indexOf(u8, text, "<string>/Users/a b/.local/bin/csw</string>\n    <string>handoff</string>\n    <string>--scheduled</string>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "<string>/Users/a b/.local/bin/claudacity</string>\n    <string>handoff</string>\n    <string>--scheduled</string>") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "<key>Hour</key>\n    <integer>22</integer>\n    <key>Minute</key>\n    <integer>0</integer>") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "<string>/Users/a b/.local/bin:/opt/homebrew/bin:") != null);
 }
 
 test "plist escapes XML special characters in paths" {
     const gpa = std.testing.allocator;
-    const text = try plist(gpa, "/x/<&>/csw", "/y", "/l");
+    const text = try plist(gpa, "/x/<&>/claudacity", "/y", "/l");
     defer gpa.free(text);
-    try std.testing.expect(std.mem.indexOf(u8, text, "/x/&lt;&amp;&gt;/csw") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "/x/&lt;&amp;&gt;/claudacity") != null);
 }

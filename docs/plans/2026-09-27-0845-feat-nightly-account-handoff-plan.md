@@ -13,11 +13,11 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** When the active Claude account is nearly out of weekly usage, the user's work continues on the next account the following morning without the user watching usage, writing handoffs, or losing track of any task.
-- **Means:** A `csw` routine that runs at 22:00, moves open work to the next profile, switches accounts, and reports what moved.
-- **Product authority:** The user (repository owner of the `raineorshine/claude-switch` fork). Decisions below were settled in dialogue on 2026-09-27.
+- **Means:** A `claudacity` routine that runs at 22:00, moves open work to the next profile, switches accounts, and reports what moved.
+- **Product authority:** The user (repository owner of the `raineorshine/claude-switch` fork, now `raineorshine/claudacity`). Decisions below were settled in dialogue on 2026-09-27.
 - **Open blockers:** None for building. Before the first real run, the saved logins for `overflow1` and `overflow2` must be renewed by signing in again; both refresh tokens are rejected as invalid (see Dependencies / Assumptions).
-- **Execution profile:** `ce-work` implements U1–U7 in order on branch `claude/csw-nightly-handoff`; the user runs the first real switch.
-- **Stop conditions:** Stop and report if any external call in KTD1–KTD4 behaves differently from what this plan records, or if a change would alter plain `csw use` behavior for users who do not opt in.
+- **Execution profile:** `ce-work` implements U1–U7 in order on branch `claude/claudacity-nightly-handoff`; the user runs the first real switch.
+- **Stop conditions:** Stop and report if any external call in KTD1–KTD4 behaves differently from what this plan records, or if a change would alter plain `claudacity use` behavior for users who do not opt in.
 - **Product Contract preservation:** Product Contract unchanged except Dependencies / Assumptions (new findings added) and Outstanding Questions (resolved into KTD4, KTD5, KTD10).
 
 ---
@@ -26,11 +26,11 @@ execution: code
 
 ### Summary
 
-A nightly `csw` routine checks usage at 22:00 and, when the active account is at or above 90% of its weekly limit, moves the user's work to the next account and switches to it. Open local Code sessions are carried into the next profile with their full history; recent cloud sessions continue as new cloud sessions on the next account from a `/ce-handoff`. One notification reports what moved and reminds the user to sign the phone in.
+A nightly `claudacity` routine checks usage at 22:00 and, when the active account is at or above 90% of its weekly limit, moves the user's work to the next account and switches to it. Open local Code sessions are carried into the next profile with their full history; recent cloud sessions continue as new cloud sessions on the next account from a `/ce-handoff`. One notification reports what moved and reminds the user to sign the phone in.
 
 ### Problem Frame
 
-The user runs Claude Desktop and the Claude mobile app across three accounts (`primary`, `overflow1`, `overflow2`) managed by `csw`, burning roughly 26% of an account's weekly limit per day, so one account switch is needed each week. Desktop can be signed into only one account at a time, so a switch is all-at-once: `csw use` quits Desktop, and every session belonging to the old profile disappears from Desktop and from the phone. Today the user must watch the usage percentage, run `/ce-handoff` in each active session by hand, switch, and then rebuild context on the new account. Handoffs are slow and interrupt running sessions, so this cannot happen during the working day. Many local projects (for example keyboard-shortcut daemons) cannot run in the cloud, so continuing work in the cloud is not a universal answer.
+The user runs Claude Desktop and the Claude mobile app across three accounts (`primary`, `overflow1`, `overflow2`) managed by `claudacity`, burning roughly 26% of an account's weekly limit per day, so one account switch is needed each week. Desktop can be signed into only one account at a time, so a switch is all-at-once: `claudacity use` quits Desktop, and every session belonging to the old profile disappears from Desktop and from the phone. Today the user must watch the usage percentage, run `/ce-handoff` in each active session by hand, switch, and then rebuild context on the new account. Handoffs are slow and interrupt running sessions, so this cannot happen during the working day. Many local projects (for example keyboard-shortcut daemons) cannot run in the cloud, so continuing work in the cloud is not a universal answer.
 
 ### Key Decisions
 
@@ -50,7 +50,7 @@ The user runs Claude Desktop and the Claude mobile app across three accounts (`p
 
 - R1. At 22:00 local time every day, the routine checks the active profile's weekly usage and does nothing further when it is below 90%.
 - R2. The schedule runs whether or not Claude Desktop is open.
-- R3. `csw` can report the 5-hour and weekly usage, with reset times, for every saved profile, including inactive ones.
+- R3. `claudacity` can report the 5-hour and weekly usage, with reset times, for every saved profile, including inactive ones.
 - R4. The next profile is the one whose weekly limit resets soonest among profiles below the threshold; when none qualifies, the routine switches nothing and says so in its report.
 
 **Local Code sessions**
@@ -102,14 +102,14 @@ The user runs Claude Desktop and the Claude mobile app across three accounts (`p
 - Creating a new cloud session is interactive-only in the CLI (`--cloud` rejects `--print`); running it through a simulated terminal created a session, and a headless follow-up message (`claude -p "<msg>" --cloud <id>`) was answered. Both were tested on 2026-09-27.
 - Desktop keeps one JSON record per local Code session under `~/Library/Application Support/Claude/claude-code-sessions/<accountUuid>/<organizationUuid>/`, holding archived state, creation time, last activity, and the CLI session id; Desktop reads these records at launch. The two ids come from `oauthAccount` in each profile's `~/.claude.<profile>.json` (checked for all three profiles on 2026-09-27).
 - A session's history lives at `~/.claude.<profile>/projects/<slug>/<cliSessionId>.jsonl`, plus a same-named directory for subagent and tool-result files; `<slug>` is the working folder with every non-alphanumeric character replaced by `-`.
-- Saved logins in `csw-code-<profile>` expire; reading an inactive profile's usage needs a token refresh first. On 2026-09-27 the refresh endpoint rejected both `overflow1`'s and `overflow2`'s refresh tokens as invalid (most likely rotated by `claude-swap` earlier that day), so both profiles need signing in again before a switch can use them.
+- Saved logins in `claudacity-code-<profile>` expire; reading an inactive profile's usage needs a token refresh first. On 2026-09-27 the refresh endpoint rejected both `overflow1`'s and `overflow2`'s refresh tokens as invalid (most likely rotated by `claude-swap` earlier that day), so both profiles need signing in again before a switch can use them.
 - Anthropic's usage endpoint and cloud-session list both answered on 2026-09-27 with the active login (see KTD1, KTD4).
 - At a burn of about 26% a day, an account at 85% at 22:00 reaches its limit before the next night's check; the user accepted the fixed 90% threshold.
 
 ### Sources / Research
 
 - Profile switching: `src/profile.zig` (`cmdUse` quits Desktop, swaps profiles, relaunches), `src/desktop.zig` (directory renames of `Claude.<profile>`), `src/paths.zig` (symlinks for `~/.claude` and `~/.claude.json`).
-- Per-profile Code logins in the Keychain: `src/profile.zig` (`csw-code-<profile>`), `src/keychain.zig` (`security` CLI wrapper).
+- Per-profile Code logins in the Keychain: `src/profile.zig` (`claudacity-code-<profile>`), `src/keychain.zig` (`security` CLI wrapper).
 - Existing HTTP: `src/main.zig` update check shells out to `curl` with `--max-time`.
 - Handoff skill: Compound Engineering `ce-handoff` (`create` never asks questions and honors a requested destination; `resume` stops for the user).
 
@@ -119,17 +119,17 @@ The user runs Claude Desktop and the Claude mobile app across three accounts (`p
 
 ### Key Technical Decisions
 
-- KTD1. **Usage comes from Anthropic's OAuth usage endpoint, called with each profile's own login.** `GET https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` returns `five_hour` and `seven_day` blocks, each with `utilization` (percent) and `resets_at`. The active profile uses the live `Claude Code-credentials` login; inactive profiles use `csw-code-<profile>`. Governs R3.
-- KTD2. **An expired saved login is refreshed through `https://platform.claude.com/v1/oauth/token` and written back at once.** The request is a `refresh_token` grant with Claude Code's public client id `9d1c250a-e61b-44d9-88ed-5944d1962f5e`. Refresh rotates the refresh token, so the new login is written back to the same Keychain entry before anything else runs; for the active profile it is written to both `Claude Code-credentials` and `csw-code-<active>`. A rejected refresh (`invalid_grant`) marks the profile as needing sign-in. Governs R3, R17.
+- KTD1. **Usage comes from Anthropic's OAuth usage endpoint, called with each profile's own login.** `GET https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` returns `five_hour` and `seven_day` blocks, each with `utilization` (percent) and `resets_at`. The active profile uses the live `Claude Code-credentials` login; inactive profiles use `claudacity-code-<profile>`. Governs R3.
+- KTD2. **An expired saved login is refreshed through `https://platform.claude.com/v1/oauth/token` and written back at once.** The request is a `refresh_token` grant with Claude Code's public client id `9d1c250a-e61b-44d9-88ed-5944d1962f5e`. Refresh rotates the refresh token, so the new login is written back to the same Keychain entry before anything else runs; for the active profile it is written to both `Claude Code-credentials` and `claudacity-code-<active>`. A rejected refresh (`invalid_grant`) marks the profile as needing sign-in. Governs R3, R17.
 - KTD3. **All HTTP goes through `curl`, with secrets passed on stdin and a CLI-style `User-Agent`.** This matches the existing update check. Tokens go in a `curl --config -` block on stdin so they never appear in process arguments. Cloudflare rejects Python's and curl's default agents on the token endpoint (error 1010), so every request sends `User-Agent: claude-cli/<version> (external, cli)`.
 - KTD4. **Cloud sessions are listed with `GET https://api.anthropic.com/v1/sessions`.** Headers: `anthropic-beta: ccr-byoc-2025-07-29`, `anthropic-version: 2023-06-01`, `x-organization-uuid: <org>`; paging through `has_more` / `last_id`. A session is a cloud session when `environment_kind` is `anthropic_cloud` (`bridge` entries are local sessions served over Remote Control and are excluded). "Running" is `session_status == "running"`; "started in the last 24 hours" is `created_at`. How the list marks archived sessions is confirmed during implementation (see Open Questions). Governs R8.
-- KTD5. **Cloud handoffs run `claude -p --teleport <id>` in a throwaway shallow clone, asking `/ce-handoff create` to write `HANDOFF.md` at the clone's root.** The clone is made from the session's GitHub repository, checked out on the session's branch, into a temporary directory (an empty temporary directory when the session has no repository); it is kept until that session's continuation (KTD6) has been created, then deleted (R11). The teleport never runs with `--dangerously-skip-permissions` or a bypass permission mode: it gets `--allowedTools` limited to read-only tools plus `Write` for that one `HANDOFF.md`. After it exits, csw checks the file and moves it into the handoffs directory. Handoff files and the nightly report live under `~/Library/Application Support/csw/handoffs/<date>/`, not the OS-managed `/tmp` store. Governs R9, R11, R13.
+- KTD5. **Cloud handoffs run `claude -p --teleport <id>` in a throwaway shallow clone, asking `/ce-handoff create` to write `HANDOFF.md` at the clone's root.** The clone is made from the session's GitHub repository, checked out on the session's branch, into a temporary directory (an empty temporary directory when the session has no repository); it is kept until that session's continuation (KTD6) has been created, then deleted (R11). The teleport never runs with `--dangerously-skip-permissions` or a bypass permission mode: it gets `--allowedTools` limited to read-only tools plus `Write` for that one `HANDOFF.md`. After it exits, claudacity checks the file and moves it into the handoffs directory. Handoff files and the nightly report live under `~/Library/Application Support/claudacity/handoffs/<date>/`, not the OS-managed `/tmp` store. Governs R9, R11, R13.
 - KTD6. **The continuation cloud session is created through a pseudo-terminal, then sent the handoff headlessly.** `claude --cloud "<title>"` runs under `script` so the interactive-only create succeeds; its output yields the new `session_…` id; `claude -p "<handoff text>" --cloud <id>` sends the handoff as the first message. The create runs with that session's KTD5 clone as its working directory, so the new session targets the same repository and branch; the pty process is ended as soon as the id is parsed. Every `claude` subprocess in the routine (teleport, create, send) has a wall-clock timeout, and a timeout counts as that session's failure (R16) instead of delaying the switch. Both run after the switch, so the CLI is signed into the next account. If implementation finds a supported API create call, prefer it. Governs R10.
 - KTD7. **Local carry-over runs inside the switch, after Desktop quits and before it relaunches.** Desktop rewrites its records while running and reads them at launch, so copying outside that window is unsafe. `desktop.quit` kills only the `Claude` app process, so the step first waits (up to 30 seconds) for Desktop-spawned `claude` session processes to exit, then sends them SIGTERM; a session whose process is still alive is counted as failed and left unarchived (R16). For each unarchived record in the outgoing profile: copy the history file and its sibling directory into the next profile's `projects/<slug>/`; copy the record, keeping its `sessionId` and `cliSessionId`, into the next profile's `claude-code-sessions/<accountUuid>/<organizationUuid>/`; then set `isArchived: true` on the outgoing record. An existing record with the same `sessionId` in the target is replaced, and its history with it. Governs R5, R6, R7.
-- KTD8. **Carry-over is opt-in on `csw use`, and the nightly routine opts in.** `csw use <name> --carry-sessions` adds KTD7 to the switch; plain `csw use` is unchanged. This keeps upstream behavior intact for other users. *Superseded 2026-10-03:* carry-over is now the default for `csw use` and `csw pick`, with `--no-carry-sessions` to opt out, and `--carry-sessions` is gone; upstream is inactive, so compatibility with it no longer constrains the fork.
-- KTD9. **New commands: `csw usage`, `csw next`, `csw handoff`, and `csw schedule`.** `csw handoff` runs the whole routine, with `--dry-run` (R15) and `--force` (ignore the threshold for a manual run, R14). `csw schedule install|uninstall|status` manages a launchd agent. Governs R1, R2, R14, R15.
-- KTD10. **The 22:00 trigger is a launchd LaunchAgent with `StartCalendarInterval` Hour 22 Minute 0.** It runs `csw handoff --scheduled` with an explicit `PATH` that includes the directory holding `claude`. launchd runs a missed calendar job when the Mac wakes, which could move the switch into the working day, so `--scheduled` acts only inside a night window of 22:00–06:00 local time: started outside it, the run switches nothing and notifies that the nightly run was missed, with the current weekly usage. The window is checked again immediately before the switch. Governs R1, R2.
-- KTD11. **The notification uses `osascript` with the message and title passed as script arguments (`on run argv` … `display notification (item 1 of argv) with title (item 2 of argv)`), never spliced into the script text, since the message can contain session titles; the full report is a Markdown file beside the handoffs.** The README's statement that csw writes nothing to disk is updated to name these files. Governs R13.
+- KTD8. **Carry-over is opt-in on `claudacity use`, and the nightly routine opts in.** `claudacity use <name> --carry-sessions` adds KTD7 to the switch; plain `claudacity use` is unchanged. This keeps upstream behavior intact for other users. *Superseded 2026-10-03:* carry-over is now the default for `claudacity use` and `claudacity pick`, with `--no-carry-sessions` to opt out, and `--carry-sessions` is gone; upstream is inactive, so compatibility with it no longer constrains the fork.
+- KTD9. **New commands: `claudacity usage`, `claudacity next`, `claudacity handoff`, and `claudacity schedule`.** `claudacity handoff` runs the whole routine, with `--dry-run` (R15) and `--force` (ignore the threshold for a manual run, R14). `claudacity schedule install|uninstall|status` manages a launchd agent. Governs R1, R2, R14, R15.
+- KTD10. **The 22:00 trigger is a launchd LaunchAgent with `StartCalendarInterval` Hour 22 Minute 0.** It runs `claudacity handoff --scheduled` with an explicit `PATH` that includes the directory holding `claude`. launchd runs a missed calendar job when the Mac wakes, which could move the switch into the working day, so `--scheduled` acts only inside a night window of 22:00–06:00 local time: started outside it, the run switches nothing and notifies that the nightly run was missed, with the current weekly usage. The window is checked again immediately before the switch. Governs R1, R2.
+- KTD11. **The notification uses `osascript` with the message and title passed as script arguments (`on run argv` … `display notification (item 1 of argv) with title (item 2 of argv)`), never spliced into the script text, since the message can contain session titles; the full report is a Markdown file beside the handoffs.** The README's statement that claudacity writes nothing to disk is updated to name these files. Governs R13.
 
 ### High-Level Technical Design
 
@@ -137,7 +137,7 @@ The nightly run, in order. Handoffs finish before the switch because they need t
 
 ```mermaid
 flowchart TB
-  A[22:00 launchd: csw handoff --scheduled] --> B{Active profile weekly usage >= 90%?}
+  A[22:00 launchd: claudacity handoff --scheduled] --> B{Active profile weekly usage >= 90%?}
   B -->|no| Z[Exit: report 'below threshold']
   B -->|yes| C[Refresh + read usage for every other profile]
   C --> D{A profile below 90% with a valid login?}
@@ -145,7 +145,7 @@ flowchart TB
   D -->|yes| E[Pick soonest weekly reset]
   E --> F[List outgoing cloud sessions; keep running or created in last 24h]
   F --> G[For each: shallow clone, teleport, /ce-handoff create to handoffs dir]
-  G --> H[csw use next --carry-sessions]
+  G --> H[claudacity use next --carry-sessions]
   H --> H1[Quit Desktop]
   H1 --> H2[Carry unarchived local sessions into next profile; archive originals]
   H2 --> H3[Swap profiles; relaunch Desktop]
@@ -181,7 +181,7 @@ outgoing  local_X.json   isArchived:true
 
 ## Implementation Units
 
-### U1. OAuth logins and `csw usage`
+### U1. OAuth logins and `claudacity usage`
 
 **Goal:** Read 5-hour and weekly usage for every saved profile, refreshing expired saved logins safely.
 **Requirements:** R3, R17; KTD1, KTD2, KTD3.
@@ -190,7 +190,7 @@ outgoing  local_X.json   isArchived:true
 **Approach:**
 1. `http.zig`: run `curl` with a `--config -` block on stdin (URL, headers, method, body), `--max-time`, the CLI `User-Agent`; return status and body.
 2. `oauth.zig`: parse the `claudeAiOauth` JSON from a Keychain entry; decide expired from `expiresAt`; refresh per KTD2 and write back before returning; map `invalid_grant` to a needs-sign-in error.
-3. `usage.zig`: parse the usage response into `{five_hour, seven_day}` with percent and reset time; `csw usage` prints one row per profile, marking the active one and any that need sign-in.
+3. `usage.zig`: parse the usage response into `{five_hour, seven_day}` with percent and reset time; `claudacity usage` prints one row per profile, marking the active one and any that need sign-in.
 4. Register `usage` in `main.zig` dispatch and help text.
 **Patterns to follow:** update check in `src/main.zig` (curl subprocess, JSON via `std.json`); `keychain.get`/`getAccount`/`set` in `src/keychain.zig`; `*In(base)` functions for testable paths.
 **Test scenarios:**
@@ -200,24 +200,24 @@ outgoing  local_X.json   isArchived:true
 - Refresh response with a new `refresh_token` → both tokens and `expiresAt` updated in the stored JSON, other fields preserved.
 - Refresh error body `{"error":"invalid_grant"}` → needs-sign-in result, stored login untouched.
 - curl config builder never places the token in argv.
-**Verification:** `csw usage` shows `primary` with the same weekly percentage as the Desktop usage card, and names `overflow1`/`overflow2` as needing sign-in until they are renewed.
+**Verification:** `claudacity usage` shows `primary` with the same weekly percentage as the Desktop usage card, and names `overflow1`/`overflow2` as needing sign-in until they are renewed.
 
-### U2. Next-profile choice and `csw next`
+### U2. Next-profile choice and `claudacity next`
 
 **Goal:** Choose the profile to switch to.
 **Requirements:** R4, R17; AE1, AE5.
 **Dependencies:** U1.
 **Files:** `src/usage.zig`, `src/main.zig`.
-**Approach:** Pure function over `(profile, usage | needs-sign-in)` rows: exclude the active profile, profiles needing sign-in, and profiles at or above the threshold; pick the earliest `seven_day.resets_at`; tie-break by lower weekly usage, then name. `csw next` prints the choice and why each other profile was excluded.
+**Approach:** Pure function over `(profile, usage | needs-sign-in)` rows: exclude the active profile, profiles needing sign-in, and profiles at or above the threshold; pick the earliest `seven_day.resets_at`; tie-break by lower weekly usage, then name. `claudacity next` prints the choice and why each other profile was excluded.
 **Test scenarios:**
 - Covers AE1. Active at 77% → the threshold check reports "below threshold" (tested at the orchestrator entry in U5; here: the chooser is not consulted).
 - Two candidates at 0%, resets Thu vs Fri → Thu chosen.
 - Candidate at 92% excluded; remaining candidate chosen.
 - Covers AE5. All candidates ≥ 90% → no choice, reason "no profile has capacity".
 - Candidate needing sign-in excluded with reason naming the profile.
-**Verification:** `csw next` names a profile and a reason for every exclusion.
+**Verification:** `claudacity next` names a profile and a reason for every exclusion.
 
-### U3. Local session carry-over and `csw use --carry-sessions`
+### U3. Local session carry-over and `claudacity use --carry-sessions`
 
 **Goal:** Move every open local Code session into the next profile inside the switch.
 **Requirements:** R5, R6, R7; KTD7, KTD8; AE2, AE4.
@@ -237,8 +237,8 @@ outgoing  local_X.json   isArchived:true
 - Record whose history file is missing → counted as failed, others still carried, outgoing record left unarchived.
 - Target account folder absent → created.
 - Fake process lister reports a Desktop-spawned `claude` process for one session that outlives the wait and SIGTERM → that session counted as failed and left unarchived; the others carried.
-- Plain `csw use` without the flag → no files touched under `claude-code-sessions`.
-**Verification:** After a real `csw use <next> --carry-sessions`, every previously open session appears in the Desktop sidebar on the next account and answers from its own history.
+- Plain `claudacity use` without the flag → no files touched under `claude-code-sessions`.
+**Verification:** After a real `claudacity use <next> --carry-sessions`, every previously open session appears in the Desktop sidebar on the next account and answers from its own history.
 **Execution note:** Build and test against temp directories only; never run carry-over against the real profiles during implementation.
 
 ### U4. Cloud session listing, handoff, and continuation
@@ -263,13 +263,13 @@ outgoing  local_X.json   isArchived:true
 - Fake runner that never exits → that session fails with reason "timed out"; the next session still runs.
 **Verification:** A dry run lists the same cloud sessions that claude.ai shows as running or started today; a real run produces one new cloud session per handoff on the next account.
 
-### U5. `csw handoff` orchestrator, report, and notification
+### U5. `claudacity handoff` orchestrator, report, and notification
 
 **Goal:** Run the whole routine in the right order, with dry run and forced manual runs.
 **Requirements:** R1, R12, R13, R14, R15, R16, R17; AE1, AE2, AE6.
 **Dependencies:** U1, U2, U3, U4.
 **Files:** `src/handoff.zig` (new), `src/main.zig`.
-**Approach:** Follow the High-Level Technical Design. `--dry-run` reads usage and session lists and prints the plan. Its only write is refreshing an expired inactive login per KTD2, whose rotated login must be saved back to its own `csw-code-<profile>` entry; it makes no file, profile, session, or Desktop change. `--scheduled` applies the night window from KTD10. `--force` skips the threshold check. The report is Markdown under `~/Library/Application Support/csw/handoffs/<date>/report.md`; the notification summarizes counts, failures, and the phone reminder.
+**Approach:** Follow the High-Level Technical Design. `--dry-run` reads usage and session lists and prints the plan. Its only write is refreshing an expired inactive login per KTD2, whose rotated login must be saved back to its own `claudacity-code-<profile>` entry; it makes no file, profile, session, or Desktop change. `--scheduled` applies the night window from KTD10. `--force` skips the threshold check. The report is Markdown under `~/Library/Application Support/claudacity/handoffs/<date>/report.md`; the notification summarizes counts, failures, and the phone reminder.
 **Test scenarios:**
 - Covers AE1. Active below threshold → report "below threshold", no chooser call, no switch.
 - Covers AE2. Active 92%, next available → call order: list cloud → handoffs → switch with carry → continuations → report.
@@ -279,31 +279,31 @@ outgoing  local_X.json   isArchived:true
 - Notification message containing `"` and `\` in a session title → passed to osascript as a separate argument, script text unchanged.
 - One handoff fails → switch still happens, report names the failed session (R16).
 - Next profile needs sign-in → no switch, notification names the profile (R17).
-**Verification:** `csw handoff --dry-run` on the real machine prints the current plan without changing anything.
+**Verification:** `claudacity handoff --dry-run` on the real machine prints the current plan without changing anything.
 **Execution note:** Route external effects (switch, notify, claude, curl) through a small interface so the order tests use fakes.
 
-### U6. `csw schedule` launchd agent
+### U6. `claudacity schedule` launchd agent
 
 **Goal:** Install, remove, and inspect the 22:00 schedule.
 **Requirements:** R1, R2; KTD10.
 **Dependencies:** U5.
 **Files:** `src/schedule.zig` (new), `src/main.zig`.
-**Approach:** Generate `~/Library/LaunchAgents/com.github.raineorshine.csw-handoff.plist` with the absolute `csw` path, `StartCalendarInterval` 22:00, `EnvironmentVariables.PATH` including the directory of the resolved `claude`, and stdout/stderr log paths beside the report dir; load with `launchctl bootstrap gui/<uid>`, unload with `bootout`; `status` prints loaded state and next run time.
+**Approach:** Generate `~/Library/LaunchAgents/com.github.raineorshine.claudacity-handoff.plist` with the absolute `claudacity` path, `StartCalendarInterval` 22:00, `EnvironmentVariables.PATH` including the directory of the resolved `claude`, and stdout/stderr log paths beside the report dir; load with `launchctl bootstrap gui/<uid>`, unload with `bootout`; `status` prints loaded state and next run time.
 **Test scenarios:**
-- Generated plist contains Hour 22, Minute 0, the absolute csw path, and a PATH with the claude directory.
+- Generated plist contains Hour 22, Minute 0, the absolute claudacity path, and a PATH with the claude directory.
 - Install when already installed → replaced, not duplicated.
 - Uninstall when absent → no error.
-**Verification:** `csw schedule status` reports the agent loaded after install and absent after uninstall.
+**Verification:** `claudacity schedule status` reports the agent loaded after install and absent after uninstall.
 
 ### U7. Documentation and help
 
-**Goal:** Document the new commands and the files csw now writes.
+**Goal:** Document the new commands and the files claudacity now writes.
 **Requirements:** R13, R14, R15.
 **Dependencies:** U1–U6.
 **Files:** `README.md`, `src/main.zig` (help text).
-**Approach:** Add a "Nightly account handoff" section: what moves, what stays (chats), the phone reminder, the sign-in requirement for inactive profiles, and the files under `~/Library/Application Support/csw/`. Correct the "nothing is written to disk" line.
+**Approach:** Add a "Nightly account handoff" section: what moves, what stays (chats), the phone reminder, the sign-in requirement for inactive profiles, and the files under `~/Library/Application Support/claudacity/`. Correct the "nothing is written to disk" line.
 **Test expectation:** none -- documentation and help text only.
-**Verification:** `csw help` lists `usage`, `next`, `handoff`, `schedule`, and `use --carry-sessions`.
+**Verification:** `claudacity help` lists `usage`, `next`, `handoff`, `schedule`, and `use --carry-sessions`.
 
 ---
 
@@ -314,15 +314,15 @@ outgoing  local_X.json   isArchived:true
 | Build (debug) | `zig build` | every unit |
 | Build (release) | `zig build -Doptimize=ReleaseSmall` | every unit |
 | Unit tests | `zig build test` | U1–U6 |
-| Non-switching smoke | `zig-out/bin/csw usage`, `zig-out/bin/csw next`, `zig-out/bin/csw handoff --dry-run` | after U5 |
-| Schedule smoke | `csw schedule install`, `csw schedule status`, `csw schedule uninstall` | after U6 |
+| Non-switching smoke | `zig-out/bin/claudacity usage`, `zig-out/bin/claudacity next`, `zig-out/bin/claudacity handoff --dry-run` | after U5 |
+| Schedule smoke | `claudacity schedule install`, `claudacity schedule status`, `claudacity schedule uninstall` | after U6 |
 
 No gate runs a real switch, a real carry-over against real profiles, or creates a real cloud session; the first real run is the user's.
 
 ## Definition of Done
 
 - All units implemented, `zig build`, the release build, and `zig build test` pass.
-- `csw usage` and `csw handoff --dry-run` run on this Mac without changing any file, profile, session, or Desktop state; their only Keychain writes are rotated logins saved back to their own entries.
-- Plain `csw use` behaves exactly as before.
+- `claudacity usage` and `claudacity handoff --dry-run` run on this Mac without changing any file, profile, session, or Desktop state; their only Keychain writes are rotated logins saved back to their own entries.
+- Plain `claudacity use` behaves exactly as before.
 - README and help describe the new commands and the files written.
 - No abandoned-attempt code remains in the diff.

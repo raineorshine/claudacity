@@ -351,7 +351,7 @@ test "teleportArgv scopes tools and never bypasses permissions" {
 }
 
 test "parseCreatedId finds the id among terminal escapes" {
-    const out = "\x1b[2K\x1b[1GCreated cloud session: csw test\r\n\x1b[36mclaude.ai/code/session_01NbmheqtYbw7mtm2boQNuYC\x1b[0m\r\n";
+    const out = "\x1b[2K\x1b[1GCreated cloud session: claudacity test\r\n\x1b[36mclaude.ai/code/session_01NbmheqtYbw7mtm2boQNuYC\x1b[0m\r\n";
     try std.testing.expectEqualStrings("session_01NbmheqtYbw7mtm2boQNuYC", parseCreatedId(out).?);
     try std.testing.expect(parseCreatedId("no id here") == null);
 }

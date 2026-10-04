@@ -1,6 +1,6 @@
 //! exec.zig — run a subprocess with optional stdin data and a wall-clock timeout.
 //!
-//! std.process.run in Zig 0.16 always ignores stdin, and csw needs to pass
+//! std.process.run in Zig 0.16 always ignores stdin, and claudacity needs to pass
 //! secrets on stdin (never in argv) and bound unattended runs.
 
 const std = @import("std");

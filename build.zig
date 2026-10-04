@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
     root_mod.link_libc = true;
 
     const exe = b.addExecutable(.{
-        .name = "csw",
+        .name = "claudacity",
         .root_module = root_mod,
     });
     b.installArtifact(exe);
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
-    const run_step = b.step("run", "Run csw");
+    const run_step = b.step("run", "Run claudacity");
     run_step.dependOn(&run_cmd.step);
 
     // `zig build test`

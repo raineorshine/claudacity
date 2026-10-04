@@ -103,7 +103,7 @@ test "get em serviço inexistente retorna erro" {
     var tio = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer tio.deinit();
     const io = tio.io();
-    const svc = try std.fmt.allocPrint(alloc, "csw-test-{d}-missing", .{@as(i64, c_time.time(null))});
+    const svc = try std.fmt.allocPrint(alloc, "claudacity-test-{d}-missing", .{@as(i64, c_time.time(null))});
     defer alloc.free(svc);
     delete(alloc, io, svc) catch {};
     try std.testing.expectError(error.KeychainNotFound, get(alloc, io, svc));
@@ -114,7 +114,7 @@ test "set e get round-trip" {
     var tio = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer tio.deinit();
     const io = tio.io();
-    const svc = try std.fmt.allocPrint(alloc, "csw-test-{d}-rt", .{@as(i64, c_time.time(null))});
+    const svc = try std.fmt.allocPrint(alloc, "claudacity-test-{d}-rt", .{@as(i64, c_time.time(null))});
     defer alloc.free(svc);
     delete(alloc, io, svc) catch {};
     defer delete(alloc, io, svc) catch {};
@@ -130,7 +130,7 @@ test "set sobrescreve entrada existente" {
     var tio = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer tio.deinit();
     const io = tio.io();
-    const svc = try std.fmt.allocPrint(alloc, "csw-test-{d}-ow", .{@as(i64, c_time.time(null))});
+    const svc = try std.fmt.allocPrint(alloc, "claudacity-test-{d}-ow", .{@as(i64, c_time.time(null))});
     defer alloc.free(svc);
     delete(alloc, io, svc) catch {};
     defer delete(alloc, io, svc) catch {};
@@ -147,7 +147,7 @@ test "update replaces an existing entry in place" {
     var tio = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer tio.deinit();
     const io = tio.io();
-    const svc = try std.fmt.allocPrint(alloc, "csw-test-{d}-upd", .{@as(i64, c_time.time(null))});
+    const svc = try std.fmt.allocPrint(alloc, "claudacity-test-{d}-upd", .{@as(i64, c_time.time(null))});
     defer alloc.free(svc);
     delete(alloc, io, svc) catch {};
     defer delete(alloc, io, svc) catch {};
@@ -167,7 +167,7 @@ test "delete de entrada inexistente não falha" {
     var tio = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer tio.deinit();
     const io = tio.io();
-    const svc = try std.fmt.allocPrint(alloc, "csw-test-{d}-del", .{@as(i64, c_time.time(null))});
+    const svc = try std.fmt.allocPrint(alloc, "claudacity-test-{d}-del", .{@as(i64, c_time.time(null))});
     defer alloc.free(svc);
     delete(alloc, io, svc) catch {};
     try delete(alloc, io, svc);

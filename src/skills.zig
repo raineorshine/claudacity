@@ -10,7 +10,7 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-const marker_name = ".csw-skills-source";
+const marker_name = ".claudacity-skills-source";
 
 fn validName(name: []const u8) bool {
     if (name.len == 0 or name.len > 128) return false;

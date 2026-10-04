@@ -1,12 +1,12 @@
 ---
 name: ship
-description: "Finish a change in the claude-switch repo: run the gates, commit, rebase on origin/main, squash, push to origin/main, move the local main, rebuild the installed csw from main, extract the session's learnings, and archive the session. Use only when the user explicitly asks for the change to be shipped, landed, or pushed to main — never because a change looks finished."
+description: "Finish a change in the claudacity repo: run the gates, commit, rebase on origin/main, squash, push to origin/main, move the local main, rebuild the installed claudacity from main, extract the session's learnings, and archive the session. Use only when the user explicitly asks for the change to be shipped, landed, or pushed to main — never because a change looks finished."
 ---
 
 # Ship (finish a change → land it on origin/main → install it)
 
 Solo-developer workflow: squash the current branch, usually in a worktree, to a single commit and
-push it to `origin/main` on the fork. No PR, and no merge commits.
+push it to `origin/main` (`raineorshine/claudacity`). No PR, and no merge commits.
 
 **Shipping is asked for, never inferred.** A change that is finished, gated and clean is a change
 ready to ship, not one to ship — say so and stop. Only the user saying to ship, land, merge or push it
@@ -66,7 +66,7 @@ Anything listed there that your side does not contain is about to be undone.
 
 **Read what the rebase brought into `AGENTS.md` and `docs/` against the change.** Another session can
 have written a claim this branch makes untrue — the first ship of this skill landed beside a new line
-saying the installed csw was the upstream release, which step 7 was about to falsify. A clean rebase
+saying the installed claudacity was the upstream release, which step 7 was about to falsify. A clean rebase
 flags none of it:
 
 ```bash
@@ -94,7 +94,7 @@ Use a single message that describes the overall diff.
 git push origin HEAD:main
 ```
 
-This is the ship. `origin` is the fork (`raineorshine/claude-switch`); never push to `upstream`.
+This is the ship. `origin` is `raineorshine/claudacity`; never push to `fork` (`raineorshine/claude-switch`) or `upstream`.
 
 **If the push is rejected as non-fast-forward,** someone else landed first and nothing was lost: go
 back to step 3, redo step 4 onto the new base, and push again.
@@ -109,21 +109,21 @@ It fast-forwards `main` in place wherever it is checked out, and moves the ref a
 checked out nowhere, since `git fetch origin main:main` refuses to move a checked-out branch. When it
 reports local changes, or the fast-forward refuses, leave them — never `checkout --` someone's work away.
 
-### 7. Rebuild the installed csw from main
+### 7. Rebuild the installed claudacity from main
 
-The installed `~/.local/bin/csw` is a copy of a local build, not a release download, and the nightly
-`csw schedule` job runs it. Build it from `origin/main` in a throwaway checkout — never from this
+The installed `~/.local/bin/claudacity` is a copy of a local build, not a release download, and the nightly
+`claudacity schedule` job runs it. Build it from `origin/main` in a throwaway checkout — never from this
 branch or the main checkout, whose trees can hold work that has not shipped:
 
 ```bash
-BUILD=$(mktemp -d)/csw-main && git worktree add --detach "$BUILD" origin/main && (cd "$BUILD" && zig build -Doptimize=ReleaseSmall) && cp "$BUILD/zig-out/bin/csw" ~/.local/bin/csw.new && mv -f ~/.local/bin/csw.new ~/.local/bin/csw && git worktree remove --force "$BUILD" && csw --version
+BUILD=$(mktemp -d)/claudacity-main && git worktree add --detach "$BUILD" origin/main && (cd "$BUILD" && zig build -Doptimize=ReleaseSmall) && cp "$BUILD/zig-out/bin/claudacity" ~/.local/bin/claudacity.new && mv -f ~/.local/bin/claudacity.new ~/.local/bin/claudacity && ln -sf claudacity ~/.local/bin/cly && git worktree remove --force "$BUILD" && claudacity --version
 ```
 
-Copy then `mv`, never `cp` over the installed file: the rename leaves a running handoff on the old
+`cly` is a relative symlink to it, so it follows each rebuild. Copy then `mv`, never `cp` over the installed file: the rename leaves a running handoff on the old
 inode, and overwriting a signed binary in place gets the next run killed by the kernel. Installing
 runs nothing against the user's profiles.
 
-**If the build fails,** the ship has still happened and the installed csw is unchanged: one line in the
+**If the build fails,** the ship has still happened and the installed claudacity is unchanged: one line in the
 report, and remove the throwaway worktree with `git worktree remove --force "$BUILD"`.
 
 ### 8. Put `🚀 ` on the title
@@ -134,7 +134,7 @@ it in the response.
 
 ### 9. Extract the learnings
 
-Invoke the `learn` skill. Whatever the session learned about csw, Claude's internals or the workflow
+Invoke the `learn` skill. Whatever the session learned about claudacity, Claude's internals or the workflow
 is still in context now and in nobody's an hour later, so this is the last stage of shipping and needs
 no ask. Skip it when the ship was itself the last step of `learn` or `learn-organize`.
 

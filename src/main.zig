@@ -35,10 +35,10 @@ comptime {
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
-const KC_PROFILE_CODE = "csw-code-";
-const GITHUB_REPO = "mtxr/claude-switch";
+const KC_PROFILE_CODE = "claudacity-code-";
+const GITHUB_REPO = "raineorshine/claudacity";
 const VERSION = "0.2.6"; // x-release-please-version
-const UPDATE_CACHE_FILE = "/tmp/csw-update-cache";
+const UPDATE_CACHE_FILE = "/tmp/claudacity-update-cache";
 const UPDATE_CHECK_INTERVAL_S = 86400; // 24h
 
 pub fn main(init: std.process.Init) !void {
@@ -114,7 +114,7 @@ fn checkUpdateSilent(gpa: std.mem.Allocator, io: std.Io) void {
     // Show notice from cache instantly — zero network latency
     if (cache.version) |latest| {
         if (isNewerVersion(latest, VERSION)) {
-            const msg = std.fmt.allocPrint(gpa, "Update available: v{s} → v{s}  (run: csw update)", .{ VERSION, latest }) catch return;
+            const msg = std.fmt.allocPrint(gpa, "Update available: v{s} → v{s}  (run: claudacity update)", .{ VERSION, latest }) catch return;
             defer gpa.free(msg);
             display.info(msg);
         }
@@ -198,7 +198,7 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     const needsName = struct {
         fn check(a: []const []const u8, c: []const u8) ![]const u8 {
             if (a.len < 2) {
-                display.print("❌  Usage: csw {s} <name>\n", .{c});
+                display.print("❌  Usage: claudacity {s} <name>\n", .{c});
                 return error.MissingArg;
             }
             return a[1];
@@ -226,7 +226,7 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         return profile.cmdNew(gpa, io, try needsName(args, "new"));
     } else if (std.mem.eql(u8, cmd, "share") or std.mem.eql(u8, cmd, "share-skills")) {
         if (args.len < 3) {
-            display.print("❌  Usage: csw share <source> <target>\n", .{});
+            display.print("❌  Usage: claudacity share <source> <target>\n", .{});
             return error.MissingArg;
         }
         return profile.cmdShare(gpa, io, args[1], args[2]);
@@ -267,7 +267,7 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         return handoff.cmdHandoff(gpa, io, opts);
     } else if (std.mem.eql(u8, cmd, "envs")) {
         if (args.len < 2 or !std.mem.eql(u8, args[1], "sync")) {
-            display.print("❌  Usage: csw envs sync [--from <profile>] [--dry-run]\n", .{});
+            display.print("❌  Usage: claudacity envs sync [--from <profile>] [--dry-run]\n", .{});
             return error.MissingArg;
         }
         var opts: envs.Options = .{};
@@ -289,7 +289,7 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, cmd, "logout-all")) {
         return profile.cmdLogoutAll(gpa, io);
     } else if (std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-v")) {
-        display.print("csw {s}\n", .{VERSION});
+        display.print("claudacity {s}\n", .{VERSION});
     } else if (std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         printHelp();
     } else {
@@ -301,10 +301,10 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
 
 fn printHelp() void {
     display.print(
-        \\csw — Claude account switcher
+        \\claudacity — one Claude, many selves: switch accounts and hand work to the next one
         \\
         \\USAGE:
-        \\  csw <command> [name]
+        \\  claudacity <command> [name]
         \\
         \\COMMANDS:
         \\  save <name>      Save current sessions as a named profile
@@ -322,11 +322,11 @@ fn printHelp() void {
         \\                   local sessions, switch to the next profile, and notify
         \\  envs sync [--from <profile>] [--dry-run]  Copy cloud environments (network access,
         \\                   env vars, setup script) from a profile (default: active) to the others
-        \\  schedule [install|uninstall|status]  Run csw handoff every night at 22:00 (launchd)
+        \\  schedule [install|uninstall|status]  Run claudacity handoff every night at 22:00 (launchd)
         \\  pick             Interactive profile picker (sk / fzf)
-        \\  update [--verbose]  Update csw to the latest release
+        \\  update [--verbose]  Update claudacity to the latest release
         \\  logout-all       Log out and remove all active symlinks
-        \\  doctor           Check that everything csw needs is in order
+        \\  doctor           Check that everything claudacity needs is in order
         \\
     , .{});
 }
@@ -419,7 +419,7 @@ fn cmdDoctor(gpa: std.mem.Allocator, io: std.Io) !void {
     if (active) |a| {
         doctorOk("Active profile", a);
     } else {
-        doctorWarn("Active profile", "none — run: csw save <name>");
+        doctorWarn("Active profile", "none — run: claudacity save <name>");
     }
 
     const profiles = try profile.list(gpa);
@@ -727,7 +727,7 @@ fn cmdUpdate(gpa: std.mem.Allocator, io: std.Io, verbose: bool) !void {
     const arch = comptime if (@import("builtin").cpu.arch == .aarch64) "aarch64" else "x86_64";
     const dl_url = try std.fmt.allocPrint(
         gpa,
-        "https://github.com/{s}/releases/download/v{s}/csw-{s}-apple-darwin",
+        "https://github.com/{s}/releases/download/v{s}/claudacity-{s}-apple-darwin",
         .{ GITHUB_REPO, latest, arch },
     );
     defer gpa.free(dl_url);

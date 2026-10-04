@@ -2,7 +2,7 @@
 //!
 //! A cloud environment (network allowlist, environment variables, setup script)
 //! belongs to the account that made it, so a host allowed on one account is
-//! still blocked on the others. `csw envs sync` makes every other profile hold
+//! still blocked on the others. `claudacity envs sync` makes every other profile hold
 //! the source profile's environments: matched by name, created when missing,
 //! updated when the config differs. Environments only the target has are left alone.
 //! Observed Claude behavior this relies on: docs/claude-internals.md

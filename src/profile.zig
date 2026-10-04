@@ -17,7 +17,7 @@ const c = @cImport({
 });
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
-const KC_PROFILE_CODE = "csw-code-";
+const KC_PROFILE_CODE = "claudacity-code-";
 
 // ── API pública ───────────────────────────────────────────────────────────────
 
@@ -142,7 +142,7 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     defer gpa.free(p_json);
 
     if (!desktop.pathExists(gpa, p_json)) {
-        display.print("❌  Profile '{s}' not found. Use: csw save {s}\n", .{ name, name });
+        display.print("❌  Profile '{s}' not found. Use: claudacity save {s}\n", .{ name, name });
         return error.ProfileNotFound;
     }
 
@@ -225,7 +225,7 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     defer gpa.free(p_dir);
 
     if (desktop.pathExists(gpa, p_json) or desktop.pathExists(gpa, p_dir)) {
-        display.print("❌  Profile '{s}' files already exist. Use: csw use {s}\n", .{ name, name });
+        display.print("❌  Profile '{s}' files already exist. Use: claudacity use {s}\n", .{ name, name });
         return error.ProfileAlreadyExists;
     }
 
@@ -257,7 +257,7 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     display.ok(ok_msg);
     const info_msg = try std.fmt.allocPrint(
         gpa,
-        "Now run: `claude auth login` and/or login on Claude Desktop\n  When you are done, run: `csw save {s}`\n",
+        "Now run: `claude auth login` and/or login on Claude Desktop\n  When you are done, run: `claudacity save {s}`\n",
         .{name},
     );
     defer gpa.free(info_msg);
@@ -324,7 +324,7 @@ pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !voi
         defer if (source) |s| gpa.free(s);
         if (source) |s| {
             if (std.mem.eql(u8, s, name)) {
-                display.print("❌  Profile '{s}' supplies shared skills and plugins to '{s}'. Run `csw unshare {s}` first.\n", .{ name, p, p });
+                display.print("❌  Profile '{s}' supplies shared skills and plugins to '{s}'. Run `claudacity unshare {s}` first.\n", .{ name, p, p });
                 return error.ProfileHasSharedSkillsDependents;
             }
         }
@@ -378,7 +378,7 @@ pub fn cmdList(gpa: std.mem.Allocator, io: std.Io) !void {
     }
 
     if (profiles.len == 0) {
-        display.print("No profiles saved yet. Use: csw save <n>\n", .{});
+        display.print("No profiles saved yet. Use: claudacity save <n>\n", .{});
         return;
     }
 
@@ -402,7 +402,7 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
     }
 
     if (profiles.len == 0) {
-        display.err("No profiles saved yet. Use: csw save <n>");
+        display.err("No profiles saved yet. Use: claudacity save <n>");
         return error.NoProfiles;
     }
 
@@ -530,7 +530,7 @@ pub fn switchLinkIn(gpa: std.mem.Allocator, link: []const u8, target: []const u8
     if (desktop.isSymlink(gpa, link)) {
         desktop.deletePathC(gpa, link);
     } else if (desktop.pathExists(gpa, link)) {
-        display.print("❌  {s} exists and is not a symlink. Run 'csw save <name>' first.\n", .{link});
+        display.print("❌  {s} exists and is not a symlink. Run 'claudacity save <name>' first.\n", .{link});
         return error.NotASymlink;
     }
 
@@ -548,11 +548,11 @@ pub fn switchLinksIn(gpa: std.mem.Allocator, base: []const u8, name: []const u8)
     defer gpa.free(p_dir);
 
     if (!desktop.pathExists(gpa, p_json)) {
-        display.print("❌  Profile config not found: {s}\nRun: csw new {s}\n", .{ p_json, name });
+        display.print("❌  Profile config not found: {s}\nRun: claudacity new {s}\n", .{ p_json, name });
         return error.ProfileNotFound;
     }
     if (!desktop.pathExists(gpa, p_dir)) {
-        display.print("❌  Profile dir not found: {s}\nRun: csw new {s}\n", .{ p_dir, name });
+        display.print("❌  Profile dir not found: {s}\nRun: claudacity new {s}\n", .{ p_dir, name });
         return error.ProfileNotFound;
     }
 
@@ -612,7 +612,7 @@ fn ensureCurrentSavedIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) !v
     if (desktop.isSymlink(gpa, cj)) return;
     if (!desktop.pathExists(gpa, cj) and !desktop.pathExists(gpa, cd)) return;
 
-    display.print("⚠️  Your current ~/.claude.json and ~/.claude/ are not managed by csw.\n", .{});
+    display.print("⚠️  Your current ~/.claude.json and ~/.claude/ are not managed by claudacity.\n", .{});
     display.print("Enter a name to save the current profile (or press Enter to skip): ", .{});
 
     var name_buf: [256]u8 = undefined;
@@ -628,7 +628,7 @@ fn ensureCurrentSavedIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) !v
 }
 
 /// Linhas do picker: nome alinhado + tab + email (se houver). Caller libera.
-/// One picker line per profile: the name, then its label (weekly usage in `csw pick`) when
+/// One picker line per profile: the name, then its label (weekly usage in `claudacity pick`) when
 /// given, then the email.
 pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8) ![]const []const u8 {
     var width: usize = 0;

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# install.sh — download and install the latest csw binary from GitHub releases
+# install.sh — download and install the latest claudacity binary from GitHub releases
 set -euo pipefail
 
-REPO="mtxr/claude-switch"
+REPO="raineorshine/claudacity"
 BIN_DIR="$HOME/.local/bin"
-BINARY="csw"
-ALIAS="claude-switch"
+BINARY="claudacity"
+ALIAS="cly"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -34,12 +34,12 @@ URL="https://github.com/${REPO}/releases/download/v${LATEST}/${BINARY}-${ARCH}-a
 
 mkdir -p "$BIN_DIR"
 
-echo "➜   Downloading csw v${LATEST} for ${ARCH}..."
+echo "➜   Downloading claudacity v${LATEST} for ${ARCH}..."
 curl -L --fail -o "${BIN_DIR}/${BINARY}" "$URL"
 chmod +x "${BIN_DIR}/${BINARY}"
 
-# Create claude-switch alias
-ln -sf "${BIN_DIR}/${BINARY}" "${BIN_DIR}/${ALIAS}"
+# Short alias
+ln -sf "${BINARY}" "${BIN_DIR}/${ALIAS}"
 
 # Ensure BIN_DIR is in PATH
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
@@ -51,10 +51,10 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
   echo ""
 fi
 
-echo "✅  csw v${LATEST} installed to ${BIN_DIR}/${BINARY}"
+echo "✅  claudacity v${LATEST} installed to ${BIN_DIR}/${BINARY}"
 echo "    Alias: ${BIN_DIR}/${ALIAS}"
 echo ""
 echo "Usage:"
-echo "  csw save work"
-echo "  csw save personal"
-echo "  csw pick"
+echo "  claudacity save work"
+echo "  claudacity save personal"
+echo "  cly pick"

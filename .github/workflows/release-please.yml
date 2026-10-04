@@ -45,13 +45,13 @@ jobs:
       - name: Build
         run: |
           zig build -Doptimize=ReleaseSmall
-          strip zig-out/bin/csw
+          strip zig-out/bin/claudacity
 
       - name: Upload binary to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp zig-out/bin/csw "zig-out/bin/csw-${{ matrix.arch }}-apple-darwin"
+          cp zig-out/bin/claudacity "zig-out/bin/claudacity-${{ matrix.arch }}-apple-darwin"
           gh release upload ${{ needs.release-please.outputs.tag_name }} \
-            "zig-out/bin/csw-${{ matrix.arch }}-apple-darwin" \
+            "zig-out/bin/claudacity-${{ matrix.arch }}-apple-darwin" \
             --repo ${{ github.repository }}

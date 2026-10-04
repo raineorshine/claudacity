@@ -299,7 +299,7 @@ fn formatWindow(buf: []u8, window: ?Window, color: bool) []const u8 {
     return std.fmt.bufPrint(buf, "{s}  {s:<33}", .{ formatPct(&p, w.pct, color), resets }) catch "";
 }
 
-/// The weekly column `csw pick` shows beside a profile, the same width for every state.
+/// The weekly column `claudacity pick` shows beside a profile, the same width for every state.
 pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
     const text: []const u8 = switch (state) {
         .usage => |u| {
@@ -313,7 +313,7 @@ pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
     return std.fmt.bufPrint(buf, "{s:<44}", .{text}) catch "";
 }
 
-/// Weekly labels for `csw pick`, one per profile in `names` order; null where a profile has
+/// Weekly labels for `claudacity pick`, one per profile in `names` order; null where a profile has
 /// no row. Skips the plan refresh, which pick does not show. Caller frees with `freeLabels`.
 pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u8) ![]?[]const u8 {
     const rows = try collectWith(gpa, io, .{ .sync_plan = false });

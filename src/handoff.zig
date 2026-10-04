@@ -1,4 +1,4 @@
-//! handoff.zig — `csw handoff`: move the day's work to the next account.
+//! handoff.zig — `claudacity handoff`: move the day's work to the next account.
 //!
 //! Order matters. Cloud handoffs need the outgoing account's login, so they run
 //! before the switch; continuations need the next account's, so they run after.
@@ -82,7 +82,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_d
         if (!@import("builtin").is_test) display.print("{s}", .{report.buf.items});
         if (!opts.dry_run) {
             fx.writeReport(fx.ctx, gpa, io, out_dir, report.buf.items);
-            fx.notify(fx.ctx, gpa, io, "csw: handoff failed", @errorName(err));
+            fx.notify(fx.ctx, gpa, io, "claudacity: handoff failed", @errorName(err));
         }
         return err;
     };
@@ -97,12 +97,12 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
-    report.line("# csw nightly handoff", .{});
+    report.line("# claudacity nightly handoff", .{});
     if (opts.dry_run) report.line("Dry run: nothing will be switched, carried, or handed off.", .{});
 
     if (opts.scheduled and !inNightWindow(fx.localHour(fx.ctx, fx.nowS(fx.ctx)))) {
-        report.line("The scheduled run started outside 22:00–06:00, so nothing was switched. Run `csw handoff` by hand if needed.", .{});
-        notifyUnlessDry(fx, gpa, io, opts, "csw: nightly handoff missed", "The Mac was asleep at 22:00. Nothing was switched; run csw handoff by hand if needed.");
+        report.line("The scheduled run started outside 22:00–06:00, so nothing was switched. Run `claudacity handoff` by hand if needed.", .{});
+        notifyUnlessDry(fx, gpa, io, opts, "claudacity: nightly handoff missed", "The Mac was asleep at 22:00. Nothing was switched; run claudacity handoff by hand if needed.");
         return .missed_window;
     }
 
@@ -115,7 +115,7 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
     };
     const weekly = usage.activeWeekly(rows) orelse {
         report.line("The active profile's weekly usage could not be read, so nothing was switched.", .{});
-        notifyUnlessDry(fx, gpa, io, opts, "csw: handoff skipped", "Active profile usage could not be read. Nothing was switched.");
+        notifyUnlessDry(fx, gpa, io, opts, "claudacity: handoff skipped", "Active profile usage could not be read. Nothing was switched.");
         return .active_unknown;
     };
     report.line("Active profile: {s}, weekly usage {d:.0}%.", .{ active_name.?, weekly.pct });
@@ -140,7 +140,7 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
         else
             try gpa.dupe(u8, "No profile has capacity. Nothing was switched.");
         defer gpa.free(msg);
-        notifyUnlessDry(fx, gpa, io, opts, "csw: handoff skipped", msg);
+        notifyUnlessDry(fx, gpa, io, opts, "claudacity: handoff skipped", msg);
         return .no_capacity;
     }
     const next_name: []const u8 = if (next_i) |i| rows[i].name else "(none)";
@@ -177,7 +177,7 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
 
     if (opts.scheduled and !inNightWindow(fx.localHour(fx.ctx, fx.nowS(fx.ctx)))) {
         report.line("The night window closed before the switch, so nothing was switched. Handoffs are saved in {s}.", .{out_dir});
-        notifyUnlessDry(fx, gpa, io, opts, "csw: handoff not finished", "Handoffs ran past 06:00, so the account was not switched.");
+        notifyUnlessDry(fx, gpa, io, opts, "claudacity: handoff not finished", "Handoffs ran past 06:00, so the account was not switched.");
         for (pending.items) |p| exec.removeTree(gpa, io, p.handoff.work_dir);
         return .window_closed;
     }
@@ -187,7 +187,7 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
         for (pending.items) |p| exec.removeTree(gpa, io, p.handoff.work_dir);
         const msg = try std.fmt.allocPrint(gpa, "The switch to {s} failed ({s}). Still on {s}.", .{ next_name, @errorName(err), active_name.? });
         defer gpa.free(msg);
-        notifyUnlessDry(fx, gpa, io, opts, "csw: switch failed", msg);
+        notifyUnlessDry(fx, gpa, io, opts, "claudacity: switch failed", msg);
         return .switch_failed;
     };
     defer use_result.deinit(gpa);
@@ -219,7 +219,7 @@ fn runInner(gpa: std.mem.Allocator, io: std.Io, fx: Effects, opts: Options, out_
     const msg = try std.fmt.allocPrint(gpa, "Now on {s}: {d} local session(s) carried, {d} cloud session(s) continued, {d} problem(s). Sign the Claude mobile app in to {s}.", .{ next_name, carried, continued, failed, next_name });
     defer gpa.free(msg);
     report.line("{s}", .{msg});
-    notifyUnlessDry(fx, gpa, io, opts, "csw: switched accounts", msg);
+    notifyUnlessDry(fx, gpa, io, opts, "claudacity: switched accounts", msg);
     return .switched;
 }
 
@@ -266,7 +266,7 @@ fn realListCloud(_: *anyopaque, arena: std.mem.Allocator, io: std.Io, active: []
 fn tmpRoot(gpa: std.mem.Allocator) ![]u8 {
     const t = std.c.getenv("TMPDIR");
     const base = if (t) |p| std.mem.sliceTo(p, 0) else "/tmp";
-    return std.fs.path.join(gpa, &.{ base, "csw-handoff" });
+    return std.fs.path.join(gpa, &.{ base, "claudacity-handoff" });
 }
 
 fn realHandOff(_: *anyopaque, gpa: std.mem.Allocator, io: std.Io, s: cloud.Session, out_dir: []const u8) cloud.HandOffResult {
@@ -319,7 +319,7 @@ pub fn realEffects() Effects {
     };
 }
 
-/// `~/Library/Application Support/csw/handoffs/<YYYY-MM-DD>`.
+/// `~/Library/Application Support/claudacity/handoffs/<YYYY-MM-DD>`.
 pub fn outDirFor(gpa: std.mem.Allocator, epoch_s: i64) ![]u8 {
     const h = try paths.home(gpa);
     defer gpa.free(h);
@@ -328,7 +328,7 @@ pub fn outDirFor(gpa: std.mem.Allocator, epoch_s: i64) ![]u8 {
     _ = c_time.localtime_r(&t, &tm);
     var buf: [16]u8 = undefined;
     const n = c_time.strftime(&buf, buf.len, "%Y-%m-%d", &tm);
-    return std.fs.path.join(gpa, &.{ h, "Library", "Application Support", "csw", "handoffs", buf[0..n] });
+    return std.fs.path.join(gpa, &.{ h, "Library", "Application Support", "claudacity", "handoffs", buf[0..n] });
 }
 
 pub fn cmdHandoff(gpa: std.mem.Allocator, io: std.Io, opts: Options) !void {
@@ -513,8 +513,8 @@ test "inNightWindow covers 22:00 to 06:00" {
 }
 
 test "notifyArgv passes titles with quotes as separate arguments" {
-    const argv = notifyArgv("csw", "Session \"A\" \\ failed");
+    const argv = notifyArgv("claudacity", "Session \"A\" \\ failed");
     try std.testing.expectEqualStrings("Session \"A\" \\ failed", argv[7]);
-    try std.testing.expectEqualStrings("csw", argv[8]);
+    try std.testing.expectEqualStrings("claudacity", argv[8]);
     for (argv[0..7]) |a| try std.testing.expect(std.mem.indexOf(u8, a, "Session") == null);
 }

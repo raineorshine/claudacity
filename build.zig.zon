@@ -1,7 +1,7 @@
 .{
-    .name = .csw,
+    .name = .claudacity,
     .version = "0.2.6", // x-release-please-version
-    .fingerprint = 0x7fa362c1e4e8e0d1,
+    .fingerprint = 0xfa3434852ae9f573,
     .paths = .{""},
     .dependencies = .{},
 }

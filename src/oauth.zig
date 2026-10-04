@@ -12,7 +12,7 @@ const keychain = @import("keychain.zig");
 pub const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 pub const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 pub const KEYCHAIN_ACTIVE = "Claude Code-credentials";
-pub const KEYCHAIN_PROFILE_PREFIX = "csw-code-";
+pub const KEYCHAIN_PROFILE_PREFIX = "claudacity-code-";
 
 /// A login is treated as expired this long before its stated expiry.
 const EXPIRY_MARGIN_MS: i64 = 5 * 60 * 1000;
