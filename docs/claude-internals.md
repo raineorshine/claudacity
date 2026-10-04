@@ -13,6 +13,8 @@ claudacity drives parts of Claude it does not own: Desktop's data directory, Cla
 - **A login records its plan at sign-in.** `subscriptionType` (`pro`, `max`, …) is stamped when the login is created and a refresh does not change it, so an upgrade leaves the saved login naming the old plan. `claudacity usage` (and `claudacity handoff`) rewrite it in `claudacity-code-<profile>` from the profile endpoint below; the live `Claude Code-credentials` entry is left to Claude Code.
 - **Repairing a login made under the wrong profile:** `claudacity save <intended>` (copies the active login to where it belongs), swap the two `oauthAccount` blocks back between the profile JSONs, then `claudacity use <active>`. Using the profile that is already active skips the auto-save and restores its saved login to `Claude Code-credentials`.
 
+- A 401 from a probe with the live `Claude Code-credentials` token usually means it expired (`claudacity whoami` shows `EXPIRED`), not that the route refuses OAuth. `claudacity usage` refreshes every login first.
+
 ## Endpoints (Bearer = the profile's access token)
 
 - Usage: `GET https://api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20`. Returns `five_hour` and `seven_day` blocks with `utilization` (percent) and `resets_at` (ISO 8601 with fractional seconds and offset); either block can be `null`. `five_hour` is `null` when the account has used nothing since its last 5-hour window ended.
@@ -30,6 +32,7 @@ claudacity drives parts of Claude it does not own: Desktop's data directory, Cla
   - `GET <id>/account-get` → one record.
   - `POST <id>/account-sync` (body `{}`) → the record. A settled `sync_status` (`success`, `fail`, `failed_content`, `failed_transient`, `failed_auth`, `failed_limits`) is the result; `in_progress` or `unspecified` means poll `account-get`, as the web app does every 3s for up to 10 tries. 429 means a sync ran recently. When the repo has not moved, the POST answers `success` and leaves `sync_started_at` unchanged.
   - `POST create-account-marketplace` with `{name, source, source_url}`; `<id>/account-update`, `DELETE <id>/account-delete`, `PUT <id>/account-subscription`.
+- Desktop's cookie decrypts with the `Claude Safe Storage` Keychain password: key = PBKDF2-HMAC-SHA1(password, `saltysalt`, 1003 rounds, 16 bytes), AES-128-CBC with an IV of 16 spaces over the value minus its `v10` prefix; the token starts at `sk-ant` (`src/desktop.zig`, `src/crypto.zig`).
 - claude.ai's Cloudflare answers macOS `/usr/bin/curl` (LibreSSL) with its "Just a moment..." challenge whatever the user agent or HTTP version, so claudacity sends these requests through Zig's `std.http.Client` (`http.sendDirect`), which it lets through. Python's `urllib` gets through only with a browser `User-Agent`; its default agent is challenged too.
 
 ## Finding an undocumented endpoint
@@ -37,6 +40,8 @@ claudacity drives parts of Claude it does not own: Desktop's data directory, Cla
 - Claude Code's binary is a Bun bundle, so `strings -n 6 "$(readlink -f "$(which claude)")" | grep -o '.\{200\}<route>.\{300\}'` shows the route with its headers and request body. Desktop's `/Applications/Claude.app/Contents/Resources/app.asar` greps the same way.
 - An operation the CLI never performs (updating a cloud environment, for one) lives only in claude.ai's web bundle. curl gets Cloudflare's challenge page there. Load `https://claude.ai/code` in the Browser pane instead, signed in or not, and from `javascript_tool` fetch every script in `performance.getEntriesByType('resource')`, plus the chunk names those scripts reference, and grep them. Fetch in batches: one call times out after 45s.
 - claude.ai's routes take its session cookie, not an OAuth token. Its `/v1/environment_providers/private/organizations/…` routes answer 403 to the Bearer token claudacity sends, while the CLI's route for the same data works. Confirm a route with a read-only GET before writing through it.
+- Map the credential, the path prefix and the HTTP client separately: for marketplaces each had its own answer (OAuth reads only under `/api/oauth/`, cookie for writes, curl challenged). A probe that worked only with one header (a browser `User-Agent`) carries that header into any script built from it.
+- claude.ai's chunks are flat files imported by relative name (`./shared-msg-0-….js`), so a chunk named in another's imports is fetched from the directory of a script already loaded.
 - When a response's shape is unknown, print its keys and value types, never its values: environment configs carry env vars, which can hold secrets.
 
 ## Claude Desktop's data directory and account

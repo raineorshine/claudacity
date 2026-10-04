@@ -16,7 +16,9 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 
 - Never run a real switch, carry-over or cloud continuation against the user's profiles to test something. Build the case in temp directories; the first real run is the user's. To see what `claudacity pick` hands the picker without switching, put a stub `sk` first on `PATH` that saves its stdin and prints nothing: an empty selection exits before any switch.
 - Reading saved logins (even hashed, to compare them) or calling Anthropic's API with them, rewriting `~/.claude.<profile>.json`, writing Desktop's session records, teleporting cloud sessions, and reading the contents of files in Desktop's data directory (`claude_desktop_config.json` included) are blocked by auto mode until the user approves. Listing that directory is allowed; for a config's shape, hand the user a keys-only `jq` command (`jq -r '.preferences | keys[]'`). Ask before relying on them, or hand the user a script to run.
+- Creating or changing claude.ai account state (adding a marketplace, for one) on any profile is blocked by auto mode even after cookie reads were approved; hand the user a script that sends a browser `User-Agent` (`docs/claude-internals.md`, Plugin marketplaces).
 - Before switching or handing off, check that each profile holds its own account (`claudacity whoami`, `claudacity usage`). A `claude auth login` run under the wrong profile gets saved over that profile's login by the next switch; repair it first (`docs/claude-internals.md`, Logins).
+- Work that runs on every switch goes in `profile.useWith`, which both `use` and `handoff` call; it runs after Desktop's data has swapped and before Desktop relaunches. `claudacity marketplaces sync` exercises the post-switch marketplace sync on the active profile without switching.
 - The installed `~/.local/bin/claudacity` is built from `main` by `ship`, so it lacks whatever this branch adds. Use this checkout's `zig-out/bin/claudacity`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under claudacity and forces a fresh sign-in.
 - `claudacity usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel. `read_terminal` strips them too, so only the user can confirm them. `sk` and `fzf` show colors only with `--ansi`.
@@ -29,6 +31,8 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 - Tests that spawn a process use `std.testing.io`; `std.Options.debug_io` fails the spawn with `OutOfMemory`.
 - Code reached from a test must not write to stdout: the test runner speaks to the build server over stdout, and the run hangs with no error. Guard prints with `builtin.is_test`.
 - Times print in the Mac's local zone (`localtime_r`, `%Z`). A test that checks a formatted time pins the zone with `setenv("TZ", …)` and `tzset()` so it passes in any zone; to see another zone from the binary, run it with `TZ=Asia/Tokyo`.
+- A new module needs its `_ = @import(...)` line in `main.zig`'s comptime block, or `zig build test` never runs its tests.
+- In-process work with no subprocess to kill (`std.http.Client`) is bounded with `std.Io.Select` racing it against `std.Io.sleep` (`http.sendDirect`).
 - External effects in orchestration code go through an injected interface (`handoff.Effects`) so ordering is tested with fakes.
 
 ## Docs
