@@ -21,6 +21,13 @@ csw drives parts of Claude it does not own: Desktop's data directory, Claude Cod
 
 - Cloud environments (network allowlist, env vars, setup script) belong to the account, so each profile has its own. Same headers as cloud sessions. `GET https://api.anthropic.com/v1/environment_providers?limit=100` lists them (`environments`, `has_more`, `last_id`) with `config: null`; `kind` is `anthropic_cloud` or `bridge` (one per Remote Control machine and folder). `GET …/environment_providers/<environment_id>` returns `{"config":{…}}` with `environment_type`, `sub_type`, `cwd`, `init_script`, `environment`, `languages` and `network_config` (`allowed_hosts`, `allow_default_hosts`). `POST …/environment_providers/cloud/create` takes `{name, kind:"anthropic_cloud", description, config}`, and `POST …/environment_providers/<environment_id>` takes `{name, description, config}` and replaces it. claude.ai's own `…/private/organizations/<org>/environments/<id>` routes answer 403 to an OAuth token. Observed October 2026.
 
+## Finding an undocumented endpoint
+
+- Claude Code's binary is a Bun bundle, so `strings -n 6 "$(readlink -f "$(which claude)")" | grep -o '.\{200\}<route>.\{300\}'` shows the route with its headers and request body. Desktop's `/Applications/Claude.app/Contents/Resources/app.asar` greps the same way.
+- An operation the CLI never performs (updating a cloud environment, for one) lives only in claude.ai's web bundle. curl gets Cloudflare's challenge page there. Load `https://claude.ai/code` in the Browser pane instead, signed in or not, and from `javascript_tool` fetch every script in `performance.getEntriesByType('resource')`, plus the chunk names those scripts reference, and grep them. Fetch in batches: one call times out after 45s.
+- claude.ai's routes take its session cookie, not an OAuth token. Its `/v1/environment_providers/private/organizations/…` routes answer 403 to the Bearer token csw sends, while the CLI's route for the same data works. Confirm a route with a read-only GET before writing through it.
+- When a response's shape is unknown, print its keys and value types, never its values: environment configs carry env vars, which can hold secrets.
+
 ## Claude Desktop's data directory and account
 
 - The active profile's Desktop data is the live `~/Library/Application Support/Claude`; only inactive profiles have a `Claude.<profile>` copy. A missing `Claude.<active>` is expected: csw writes it on the next switch away.

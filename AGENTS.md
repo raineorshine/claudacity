@@ -32,5 +32,5 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 
 ## Docs
 
-- `docs/claude-internals.md` — how Claude Desktop, Claude Code and Anthropic's OAuth endpoints behave where csw depends on them: login refresh and rotation, the usage and cloud-session APIs, Desktop's session store, unattended CLI runs, launchd quirks.
+- `docs/claude-internals.md` — how Claude Desktop, Claude Code and Anthropic's OAuth endpoints behave where csw depends on them: login refresh and rotation, the usage and cloud-session APIs, Desktop's session store, unattended CLI runs, launchd quirks, and how to find an endpoint no doc lists.
 - `docs/plans/` — unified plans; `2026-09-27-0845-feat-nightly-account-handoff-plan.md` holds the product decisions behind `csw handoff` (why no request proxy, what moves and what stays).
