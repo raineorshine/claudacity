@@ -1,6 +1,6 @@
 # claudacity (`cly`)
 
-A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved accounts, and can move open work to the next account when the active one runs out of weekly usage. This checkout is `raineorshine/claudacity` (`origin`), a standalone repo that grew out of Raine's fork `raineorshine/claude-switch` (remote `fork`, where it was `csw`) of `mtxr/claude-switch` (`upstream`). Raine is its only user and upstream is inactive, so neither constrains a change: change a default or remove a flag outright, with no compatibility alias or deprecation path.
+A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved accounts, and can move open work to the next account when the active one runs out of weekly usage. This checkout is `raineorshine/claudacity` (`origin`), a standalone repo that grew out of Raine's fork `raineorshine/claude-switch` (remote `fork`, where it was `csw`) of `mtxr/claude-switch` (`upstream`). Raine is its only user and upstream is inactive, so neither constrains a change: change a default or remove a flag outright, with no compatibility alias or deprecation path. Existing on-disk or Keychain data that a change renames moves by a one-off script handed to the user, never by migration code committed to the repo.
 
 ## Gates
 
@@ -20,6 +20,7 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 - The installed `~/.local/bin/claudacity` is built from `main` by `ship`, so it lacks whatever this branch adds. Use this checkout's `zig-out/bin/claudacity`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under claudacity and forces a fresh sign-in.
 - `claudacity usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel. `read_terminal` strips them too, so only the user can confirm them. `sk` and `fzf` show colors only with `--ansi`.
+- `security` reads the login Keychain under `$HOME`, so a script tested with a fake `HOME` finds no Keychain items at all. Point only its file paths at the temp directory (a root variable) and use throwaway service names in the real Keychain.
 - Secrets never go in process arguments: requests go through `exec.run` with the request on stdin (`src/http.zig`). `std.process.run` always ignores stdin in Zig 0.16, so piping needs `std.process.spawn` with `.stdin = .pipe` (`src/exec.zig`).
 
 ## Zig tests
