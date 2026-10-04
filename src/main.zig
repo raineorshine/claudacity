@@ -39,7 +39,7 @@ comptime {
 const KEYCHAIN_CODE = "Claude Code-credentials";
 const KC_PROFILE_CODE = "claudacity-code-";
 const GITHUB_REPO = "raineorshine/claudacity";
-const VERSION = "0.2.6"; // x-release-please-version
+const VERSION = "1.0.0"; // x-release-please-version
 const UPDATE_CACHE_FILE = "/tmp/claudacity-update-cache";
 const UPDATE_CHECK_INTERVAL_S = 86400; // 24h
 

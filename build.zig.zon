@@ -1,6 +1,6 @@
 .{
     .name = .claudacity,
-    .version = "0.2.6", // x-release-please-version
+    .version = "1.0.0", // x-release-please-version
     .fingerprint = 0xfa3434852ae9f573,
     .paths = .{""},
     .dependencies = .{},
