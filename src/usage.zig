@@ -1,6 +1,7 @@
 //! usage.zig — per-profile plan usage and the choice of the next profile.
 
 const std = @import("std");
+const c_time = @cImport(@cInclude("time.h"));
 const display = @import("display.zig");
 const http = @import("http.zig");
 const oauth = @import("oauth.zig");
@@ -268,6 +269,15 @@ fn formatReset(buf: []u8, epoch: i64) []const u8 {
     return std.fmt.bufPrint(buf, "{s} {d} @ {d}:{d:0>2}{s} {s}", .{ day[0..day_n], @as(u32, @intCast(tm.tm_mday)), hour, @as(u32, @intCast(tm.tm_min)), ampm, zone[0..zone_n] }) catch "";
 }
 
+/// Time left until a reset, like "in 3h 12m" or "in 42m"; minutes round up, so the last
+/// minute reads "in 1m" and a reset already past reads "now".
+fn formatIn(buf: []u8, secs: i64) []const u8 {
+    if (secs <= 0) return "now";
+    const mins: u64 = @intCast(@divFloor(secs + 59, 60));
+    if (mins < 60) return std.fmt.bufPrint(buf, "in {d}m", .{mins}) catch "";
+    return std.fmt.bufPrint(buf, "in {d}h {d}m", .{ mins / 60, mins % 60 }) catch "";
+}
+
 /// ANSI color for a usage percentage: green, yellow, orange, then red once the profile is full.
 fn pctColor(pct: f64) []const u8 {
     if (pct < 50) return "\x1b[32m";
@@ -289,14 +299,17 @@ fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
 }
 
 /// One usage window's column: its percentage and reset time, or a placeholder of the
-/// same width when the API reports no window (no usage in the 5-hour window yet).
-fn formatWindow(buf: []u8, window: ?Window, color: bool) []const u8 {
-    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<33}", .{ "--", "(no active window)" }) catch "";
+/// same width when the API reports no window (no usage in the 5-hour window yet). With `now`,
+/// the reset reads as time left ("in 3h 12m"), which fits a narrower column than a date.
+fn formatWindow(buf: []u8, window: ?Window, color: bool, now: ?i64) []const u8 {
+    const width: usize = if (now == null) 33 else 18;
+    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<[2]}", .{ "--", "(no active window)", width }) catch "";
     var p: [32]u8 = undefined;
     var t: [64]u8 = undefined;
     var r: [80]u8 = undefined;
-    const resets = std.fmt.bufPrint(&r, "(resets {s})", .{formatReset(&t, w.resets_at)}) catch "";
-    return std.fmt.bufPrint(buf, "{s}  {s:<33}", .{ formatPct(&p, w.pct, color), resets }) catch "";
+    const when = if (now) |n| formatIn(&t, w.resets_at - n) else formatReset(&t, w.resets_at);
+    const resets = std.fmt.bufPrint(&r, "(resets {s})", .{when}) catch "";
+    return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), resets, width }) catch "";
 }
 
 /// The weekly column `claudacity pick` shows beside a profile, the same width for every state.
@@ -304,7 +317,7 @@ pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
     const text: []const u8 = switch (state) {
         .usage => |u| {
             var w: [128]u8 = undefined;
-            return std.fmt.bufPrint(buf, "7d {s}", .{formatWindow(&w, u.seven_day, color)}) catch "";
+            return std.fmt.bufPrint(buf, "7d {s}", .{formatWindow(&w, u.seven_day, color, null)}) catch "";
         },
         .needs_sign_in => "needs signing in again",
         .no_login => "no saved login",
@@ -340,6 +353,7 @@ pub fn freeLabels(gpa: std.mem.Allocator, labels: []?[]const u8) void {
 
 pub fn printRows(rows: []const ProfileUsage) void {
     const color = useColor();
+    const now: i64 = @intCast(c_time.time(null));
     for (rows) |row| {
         const marker: []const u8 = if (row.active) "> " else "  ";
         switch (row.state) {
@@ -348,7 +362,7 @@ pub fn printRows(rows: []const ProfileUsage) void {
                 var b2: [128]u8 = undefined;
                 display.print("{s}{s:<12} 5h {s}   7d {s}\n", .{
                     marker,                                  row.name,
-                    formatWindow(&b1, u.five_hour, color), formatWindow(&b2, u.seven_day, color),
+                    formatWindow(&b1, u.five_hour, color, now), formatWindow(&b2, u.seven_day, color, null),
                 });
             },
             .needs_sign_in => display.print("{s}{s:<12} needs signing in again (saved login is no longer valid)\n", .{ marker, row.name }),
@@ -402,12 +416,32 @@ test "parseUsage reports a null weekly window as unknown, not 0%" {
 
 test "formatWindow shows a missing window as a placeholder, not a negative percentage" {
     var buf: [128]u8 = undefined;
-    const missing = formatWindow(&buf, null, false);
+    const missing = formatWindow(&buf, null, false, null);
     try std.testing.expectEqualStrings("    --  (no active window)               ", missing);
     var buf2: [128]u8 = undefined;
-    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false);
+    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false, null);
     try std.testing.expectEqual(missing.len, present.len);
     try std.testing.expect(std.mem.startsWith(u8, present, "  6.0%  (resets "));
+}
+
+test "formatWindow with now keeps one width for the longest time left and the placeholder" {
+    var buf: [128]u8 = undefined;
+    const missing = formatWindow(&buf, null, false, 0);
+    var buf2: [128]u8 = undefined;
+    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 5 * 3600 }, false, 1);
+    try std.testing.expectEqualStrings("  6.0%  (resets in 5h 0m) ", present);
+    try std.testing.expectEqual(missing.len, formatWindow(&buf2, .{ .pct = 6, .resets_at = 5 * 3600 - 60 }, false, 0).len);
+}
+
+test "formatIn reads like in 3h 12m, rounding minutes up" {
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("in 3h 12m", formatIn(&buf, 3 * 3600 + 12 * 60));
+    try std.testing.expectEqualStrings("in 3h 12m", formatIn(&buf, 3 * 3600 + 11 * 60 + 1));
+    try std.testing.expectEqualStrings("in 42m", formatIn(&buf, 42 * 60));
+    try std.testing.expectEqualStrings("in 1m", formatIn(&buf, 5));
+    try std.testing.expectEqualStrings("in 1h 0m", formatIn(&buf, 3600));
+    try std.testing.expectEqualStrings("now", formatIn(&buf, 0));
+    try std.testing.expectEqualStrings("now", formatIn(&buf, -30));
 }
 
 test "formatReset reads like Thu Oct 1 @ 1pm EDT" {
