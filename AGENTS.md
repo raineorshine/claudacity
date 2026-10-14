@@ -7,6 +7,7 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 - `zig build`, `zig build -Doptimize=ReleaseSmall` and `zig build test` must pass. CI runs the same three, but Actions have not run on this repo, so the local run is the gate.
 - Judge a test run by its exit code and `Build Summary`. An existing Desktop test prints `❌  Cookies DB não encontrado` and a `failed command:` line on every passing run.
 - `claudacity handoff --dry-run` is the safe end-to-end smoke. It still refreshes expired saved logins, which writes the rotated login to the Keychain.
+- `zig-out/bin/claudacity usage` is the smoke for a change to what `usage` or `pick` prints. It reads every profile and refreshes expired logins the same way, and switches nothing.
 
 ## Shipping
 
