@@ -207,7 +207,9 @@ The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:
 
 `claudacity usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `claudacity pick` shows each profile's email, then its weekly percentage colored the same way. The 5-hour reset reads as time left, like `in 3h 12m`; the weekly reset reads like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
 
-Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When it cannot, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, checks the account it gets is the profile's, and saves it. Run unattended, it warns instead; then sign out of claude.ai in your browser and run `claudacity use <name>`, `claude auth login --email <address>` and `claudacity save <name>`, in that order: logging in while another profile is active overwrites that profile's login.
+Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, so whichever account claude.ai, Claude Desktop or Claude Code is signed in to elsewhere does not matter, checks the account it gets is the profile's, offering the window again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity use <name>`.
+
+Each profile's account is recorded in `~/Library/Application Support/claudacity/accounts.json`, first from the email `claudacity whoami` shows for it. A switch never saves a Claude Code login for another account over the profile you are leaving, and never hands one profile's login to another. `claudacity save <name>` records whatever account is signed in as the profile's, which is how to change it.
 
 ## How it works
 
@@ -218,6 +220,7 @@ claudacity saves Claude Code session credentials in **macOS Keychain** and moves
 | Data | Where it lives |
 |---|---|
 | Claude Code tokens | Keychain: `claudacity-code-<profile>` |
+| Each profile's account | `~/Library/Application Support/claudacity/accounts.json` |
 | Active Code session | Keychain: `Claude Code-credentials` (managed by Claude) |
 | Active Desktop session | Electron SQLite cookie, AES-128-CBC encrypted (managed by Claude Desktop) |
 | Desktop encryption key | Keychain: `Claude Safe Storage` (managed by Claude Desktop) |

@@ -183,6 +183,50 @@ pub fn planFromProfile(gpa: std.mem.Allocator, body: []const u8) !?[]const u8 {
     return null;
 }
 
+/// The account email in a profile endpoint response (owned), or null.
+pub fn emailFromProfile(gpa: std.mem.Allocator, body: []const u8) ?[]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, body, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const account = parsed.value.object.get("account") orelse return null;
+    if (account != .object) return null;
+    const email = stringIn(account.object, "email") orelse return null;
+    return gpa.dupe(u8, email) catch null;
+}
+
+/// The account `access_token` signs in as, asked of the profile endpoint: the
+/// one record of a login's account that `claude auth login` cannot rewrite.
+pub fn accountEmail(gpa: std.mem.Allocator, io: std.Io, access_token: []const u8) ?[]u8 {
+    const auth = std.fmt.allocPrint(gpa, "Bearer {s}", .{access_token}) catch return null;
+    defer {
+        @memset(auth, 0);
+        gpa.free(auth);
+    }
+    const resp = http.send(gpa, io, .{
+        .url = PROFILE_URL,
+        .headers = &.{
+            .{ .name = "Authorization", .value = auth },
+            .{ .name = "anthropic-beta", .value = "oauth-2025-04-20" },
+        },
+    }) catch return null;
+    defer resp.deinit(gpa);
+    if (resp.status != 200) return null;
+    return emailFromProfile(gpa, resp.body);
+}
+
+/// The account of the live Claude Code login, without refreshing it: a refresh
+/// would also write the profile's saved copy, which may belong to another account.
+pub fn liveAccountEmail(gpa: std.mem.Allocator, io: std.Io) ?[]u8 {
+    const stored = keychain.get(gpa, io, KEYCHAIN_ACTIVE) catch return null;
+    defer gpa.free(stored);
+    const token = (validAccessToken(gpa, stored, nowMs()) catch return null) orelse return null;
+    defer {
+        @memset(token, 0);
+        gpa.free(token);
+    }
+    return accountEmail(gpa, io, token);
+}
+
 /// The stored login with `subscriptionType` set to `plan` (owned), or null
 /// when it already says so.
 pub fn applyPlan(gpa: std.mem.Allocator, stored_json: []const u8, plan: []const u8) !?[]u8 {
@@ -311,4 +355,13 @@ test "applyPlan rewrites a stale plan and keeps other fields" {
     const o = oauthObject(parsed.value).?;
     try std.testing.expectEqualStrings("pro", stringIn(o, "subscriptionType").?);
     try std.testing.expectEqualStrings("old-rt", stringIn(o, "refreshToken").?);
+}
+
+test "emailFromProfile reads the account's email" {
+    const gpa = std.testing.allocator;
+    const got = emailFromProfile(gpa, "{\"account\":{\"email\":\"me@home.com\"},\"organization\":{}}").?;
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("me@home.com", got);
+    try std.testing.expect(emailFromProfile(gpa, "{\"organization\":{}}") == null);
+    try std.testing.expect(emailFromProfile(gpa, "nope") == null);
 }

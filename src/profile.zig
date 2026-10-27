@@ -13,6 +13,7 @@ const usage = @import("usage.zig");
 const marketplaces = @import("marketplaces.zig");
 const oauth_login = @import("oauth.zig");
 const exec = @import("exec.zig");
+const accounts = @import("accounts.zig");
 
 const c = @cImport({
     @cInclude("dirent.h");
@@ -42,7 +43,20 @@ pub fn profileJsonEmail(gpa: std.mem.Allocator, name: []const u8) !?[]const u8 {
     return profileJsonEmailIn(gpa, h, name);
 }
 
+/// Saves the live login as `name`'s and pins `name` to its account: the user
+/// saying which account the profile is.
 pub fn cmdSave(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
+    return saveAs(gpa, io, name, .explicit);
+}
+
+const SaveKind = enum {
+    /// `claudacity save`: whatever is signed in becomes the profile's account.
+    explicit,
+    /// The save before a switch: a login for another account is not saved.
+    auto,
+};
+
+fn saveAs(gpa: std.mem.Allocator, io: std.Io, name: []const u8, kind: SaveKind) !void {
     const h = try paths.home(gpa);
     defer gpa.free(h);
 
@@ -60,7 +74,24 @@ pub fn cmdSave(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
 
     try migrateToProfileIn(gpa, io, h, name);
 
-    if (c_token) |token| {
+    if (c_token) |token| keep: {
+        // The live login's own account, else the one `claude auth login` wrote.
+        const live = oauth_login.liveAccountEmail(gpa, io) orelse (profileJsonEmailIn(gpa, h, name) catch null);
+        defer if (live) |l| gpa.free(l);
+        const pinned = if (kind == .auto) expectedAccount(gpa, h, name) else accounts.pinned(gpa, h, name);
+        defer if (pinned) |p| gpa.free(p);
+        if (live) |l| {
+            if (pinned) |p| if (!accounts.same(l, p)) switch (kind) {
+                .auto => {
+                    display.print("⚠️  Claude Code is signed in as {s}, not '{s}' ({s}), so '{s}' keeps its saved login.\n", .{ l, name, p, name });
+                    break :keep;
+                },
+                .explicit => display.print("'{s}' is now {s} (was {s})\n", .{ name, l, p }),
+            };
+            if (pinned == null or kind == .explicit) accounts.pin(gpa, h, name, l) catch |err| {
+                display.print("⚠️  Could not record '{s}' as {s}: {s}\n", .{ name, l, @errorName(err) });
+            };
+        }
         const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KC_PROFILE_CODE, name });
         defer gpa.free(svc);
         try keychain.set(gpa, io, svc, c_acct, token);
@@ -174,31 +205,22 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
             const msg = try std.fmt.allocPrint(gpa, "Auto-saving current profile '{s}' before switching...", .{c_name});
             defer gpa.free(msg);
             display.info(msg);
-            try cmdSave(gpa, io, c_name);
+            try saveAs(gpa, io, c_name, .auto);
         }
     }
 
     const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KC_PROFILE_CODE, name });
     defer gpa.free(svc);
 
-    // Renew the login being switched to before Claude Code gets it: one whose
-    // refresh token has lapsed leaves every CLI session failing to authenticate
-    // while Desktop, which signs in on its own, works. Skipped for the active
-    // profile, whose saved copy is older than the live login.
+    // Check the login being switched to before Claude Code gets it: one that
+    // has lapsed, is missing or belongs to another account leaves every CLI
+    // session failing or on the wrong account, while Desktop, which signs in on
+    // its own, works. Skipped for the active profile, whose saved copy is older
+    // than the live login.
     const switching = if (cur) |c_name| !std.mem.eql(u8, c_name, name) else true;
-    var lapsed = false;
-    if (switching) {
-        if (oauth_login.freshAccessToken(gpa, io, name, false)) |login| switch (login) {
-            .token => |t| {
-                @memset(t, 0);
-                gpa.free(t);
-            },
-            .needs_sign_in => lapsed = true,
-            .missing => {},
-        } else |_| {}
-    }
+    const sign_in: ?SignInReason = if (switching) checkSaved(gpa, io, h, name) else null;
 
-    const c_token = keychain.get(gpa, io, svc) catch null;
+    const c_token = if (sign_in == null) keychain.get(gpa, io, svc) catch null else null;
     defer if (c_token) |t| gpa.free(t);
     const c_acct = keychain.getAccount(gpa, io, svc);
     defer gpa.free(c_acct);
@@ -222,6 +244,9 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
         defer gpa.free(msg);
         display.info(msg);
         try keychain.set(gpa, io, KEYCHAIN_CODE, c_acct, token);
+    } else if (switching) {
+        // Left in place, the last profile's login would run this one's sessions.
+        keychain.delete(gpa, io, KEYCHAIN_CODE) catch {};
     }
 
     try switchLinksIn(gpa, h, name);
@@ -234,62 +259,162 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     const msg = try std.fmt.allocPrint(gpa, "Switched to '{s}'", .{name});
     defer gpa.free(msg);
     display.ok(msg);
-    if (lapsed) signInAgain(gpa, io, h, name);
+    if (sign_in) |why| signInAgain(gpa, io, h, name, why);
     return use_result;
 }
 
-/// Signs the now-active profile `name` in again after its login lapsed, then
-/// saves it, so the switch leaves Claude Code working. Needs a terminal for the
-/// browser sign-in; an unattended switch only warns.
-fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) void {
+/// The account `name` belongs to: its pin, else the account its JSON names,
+/// pinned now so a later `claude auth login` as another account cannot move it.
+fn expectedAccount(gpa: std.mem.Allocator, h: []const u8, name: []const u8) ?[]u8 {
+    if (accounts.pinned(gpa, h, name)) |p| return p;
+    const from_json = (profileJsonEmailIn(gpa, h, name) catch null) orelse return null;
+    const owned = gpa.dupe(u8, from_json) catch null;
+    gpa.free(from_json);
+    const email = owned orelse return null;
+    accounts.pin(gpa, h, name, email) catch {};
+    return email;
+}
+
+const SignInReason = union(enum) {
+    lapsed,
+    missing,
+    /// The saved login's account, which is not the profile's.
+    other_account: []u8,
+};
+
+/// Why `name`'s saved login cannot be handed to Claude Code, or null when it
+/// can. A login whose account cannot be read (offline) is trusted.
+fn checkSaved(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) ?SignInReason {
+    const login = oauth_login.freshAccessToken(gpa, io, name, false) catch return null;
+    switch (login) {
+        .needs_sign_in => return .lapsed,
+        .missing => return .missing,
+        .token => |t| {
+            defer {
+                @memset(t, 0);
+                gpa.free(t);
+            }
+            const got = oauth_login.accountEmail(gpa, io, t) orelse return null;
+            const pinned = expectedAccount(gpa, h, name) orelse {
+                // Nothing names this profile's account: its saved login does.
+                accounts.pin(gpa, h, name, got) catch {};
+                gpa.free(got);
+                return null;
+            };
+            defer gpa.free(pinned);
+            if (accounts.same(got, pinned)) {
+                gpa.free(got);
+                return null;
+            }
+            return .{ .other_account = got };
+        },
+    }
+}
+
+const SIGN_IN_TRIES = 3;
+
+/// Signs the now-active profile `name` in as its own account, then saves it, so
+/// the switch leaves Claude Code working. Needs a terminal for the browser
+/// sign-in; an unattended switch only warns, leaving Claude Code signed out.
+fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8, why: SignInReason) void {
+    defer if (why == .other_account) gpa.free(why.other_account);
+    const want = expectedAccount(gpa, h, name);
+    defer if (want) |w| gpa.free(w);
+    const as = want orelse "its account";
+    switch (why) {
+        .lapsed => display.print("🔑  '{s}' Claude Code login has lapsed.\n", .{name}),
+        .missing => display.print("🔑  '{s}' has no saved Claude Code login.\n", .{name}),
+        .other_account => |got| display.print("🔑  '{s}' saved Claude Code login is {s}, not {s}.\n", .{ name, got, as }),
+    }
     if (std.c.isatty(std.posix.STDIN_FILENO) != 1) {
-        display.print("⚠️  '{s}' Claude Code login can no longer be renewed, so Claude Code sessions will fail to sign in. Sign in again with: claude auth login, then: claudacity save {s}\n", .{ name, name });
+        display.print("⚠️  Claude Code is signed out, so its sessions will fail. Sign in again with: claudacity use {s}\n", .{name});
         return;
     }
-    const want = profileJsonEmailIn(gpa, h, name) catch null;
-    defer if (want) |w| gpa.free(w);
-    if (want) |w| {
-        display.print("🔑  '{s}' Claude Code login has lapsed. Sign in as {s} in the private window that opens.\n", .{ name, w });
-    } else {
-        display.print("🔑  '{s}' Claude Code login has lapsed. Sign in again in the private window that opens.\n", .{name});
+
+    // `claude auth login` rewrites the active profile's account, so a sign-in
+    // as the wrong one is put back from this copy.
+    const json_path = paths.profileJsonIn(gpa, h, name) catch return;
+    defer gpa.free(json_path);
+    const before = readFileAlloc(gpa, json_path);
+    defer if (before) |b| gpa.free(b);
+
+    var tries: usize = 0;
+    while (tries < SIGN_IN_TRIES) : (tries += 1) {
+        display.print("🔑  Sign in as {s} in the private window that opens.\n", .{as});
+        if (!runLogin(gpa, io, want)) {
+            display.print("❌  Sign-in did not finish.\n", .{});
+            break;
+        }
+        const got = oauth_login.liveAccountEmail(gpa, io) orelse signedInEmail(gpa, io);
+        defer if (got) |g| gpa.free(g);
+        if (want == null or (got != null and accounts.same(got.?, want.?))) {
+            saveAs(gpa, io, name, .explicit) catch |err| {
+                display.print("❌  Signed in, but could not save '{s}': {s}\n", .{ name, @errorName(err) });
+                return;
+            };
+            const msg = std.fmt.allocPrint(gpa, "Signed '{s}' in as {s} and saved it", .{ name, got orelse as }) catch return;
+            defer gpa.free(msg);
+            display.ok(msg);
+            return;
+        }
+        display.print("❌  Signed in as {s}, not {s}.\n", .{ got orelse "an unknown account", as });
     }
 
-    // `--email` does not choose the account: the browser authorizes whichever
-    // claude.ai account it is signed in to. claudacity stands in as the browser
-    // (`openPrivate`), so the sign-in starts from a private window with none.
+    keychain.delete(gpa, io, KEYCHAIN_CODE) catch {};
+    if (before) |b| writeFileAll(gpa, json_path, b) catch {};
+    display.print("⚠️  Claude Code is left signed out under '{s}'. Sign in again with: claudacity use {s}\n", .{ name, name });
+}
+
+/// Runs `claude auth login` with claudacity as its browser, which opens the
+/// sign-in in a private window: `--email` only pre-fills the form, and a normal
+/// window authorizes whichever claude.ai account it is signed in to.
+fn runLogin(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8) bool {
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     var size: u32 = @intCast(exe_buf.len);
     const browser = if (std.c._NSGetExecutablePath(&exe_buf, &size) == 0)
-        std.fmt.allocPrint(gpa, "BROWSER={s}", .{std.mem.sliceTo(&exe_buf, 0)}) catch return
+        std.fmt.allocPrint(gpa, "BROWSER={s}", .{std.mem.sliceTo(&exe_buf, 0)}) catch return false
     else
-        gpa.dupe(u8, "BROWSER=open") catch return;
+        gpa.dupe(u8, "BROWSER=open") catch return false;
     defer gpa.free(browser);
     const argv: []const []const u8 = if (want) |w| &.{ "/usr/bin/env", browser, "claude", "auth", "login", "--email", w } else &.{ "/usr/bin/env", browser, "claude", "auth", "login" };
     var child = std.process.spawn(io, .{ .argv = argv, .stdin = .inherit, .stdout = .inherit, .stderr = .inherit }) catch |err| {
         display.print("❌  Could not run claude auth login: {s}\n", .{@errorName(err)});
-        return;
+        return false;
     };
-    const term = child.wait(io) catch return;
-    if (term != .exited or term.exited != 0) {
-        display.print("❌  Sign-in did not finish. Run: claude auth login, then: claudacity save {s}\n", .{name});
-        return;
-    }
+    const term = child.wait(io) catch return false;
+    return term == .exited and term.exited == 0;
+}
 
-    if (want) |w| {
-        const got = signedInEmail(gpa, io);
-        defer if (got) |g| gpa.free(g);
-        if (got == null or !std.ascii.eqlIgnoreCase(got.?, w)) {
-            display.print("❌  Signed in as {s}, not {s}, so '{s}' was not saved. Sign out of claude.ai in the browser, then run: claude auth login, and: claudacity save {s}\n", .{ got orelse "an unknown account", w, name, name });
-            return;
+fn readFileAlloc(gpa: std.mem.Allocator, path: []const u8) ?[]u8 {
+    const path_z = gpa.dupeZ(u8, path) catch return null;
+    defer gpa.free(path_z);
+    const fd = std.c.open(path_z, .{}, @as(std.c.mode_t, 0));
+    if (fd < 0) return null;
+    defer _ = std.c.close(fd);
+    var out: std.ArrayList(u8) = .empty;
+    var buf: [64 * 1024]u8 = undefined;
+    while (true) {
+        const n = std.c.read(fd, &buf, buf.len);
+        if (n < 0) {
+            out.deinit(gpa);
+            return null;
         }
+        if (n == 0) break;
+        out.appendSlice(gpa, buf[0..@intCast(n)]) catch {
+            out.deinit(gpa);
+            return null;
+        };
     }
-    cmdSave(gpa, io, name) catch |err| {
-        display.print("❌  Signed in, but could not save '{s}': {s}\n", .{ name, @errorName(err) });
-        return;
-    };
-    const msg = std.fmt.allocPrint(gpa, "Signed '{s}' in again and saved it", .{name}) catch return;
-    defer gpa.free(msg);
-    display.ok(msg);
+    return out.toOwnedSlice(gpa) catch null;
+}
+
+fn writeFileAll(gpa: std.mem.Allocator, path: []const u8, data: []const u8) !void {
+    const path_z = try gpa.dupeZ(u8, path);
+    defer gpa.free(path_z);
+    const fd = std.c.open(path_z, .{ .ACCMODE = .WRONLY, .TRUNC = true }, @as(std.c.mode_t, 0));
+    if (fd < 0) return error.OpenFailed;
+    defer _ = std.c.close(fd);
+    if (std.c.write(fd, data.ptr, data.len) != data.len) return error.WriteFailed;
 }
 
 /// Opens `url` in a private browser window, which shares no sign-in with the

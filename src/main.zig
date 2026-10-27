@@ -34,6 +34,7 @@ comptime {
     _ = @import("json.zig");
     _ = @import("envs.zig");
     _ = @import("marketplaces.zig");
+    _ = @import("accounts.zig");
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
