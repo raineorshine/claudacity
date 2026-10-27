@@ -11,6 +11,8 @@ const plugins = @import("plugins.zig");
 const sessions = @import("sessions.zig");
 const usage = @import("usage.zig");
 const marketplaces = @import("marketplaces.zig");
+const oauth_login = @import("oauth.zig");
+const exec = @import("exec.zig");
 
 const c = @cImport({
     @cInclude("dirent.h");
@@ -179,6 +181,23 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KC_PROFILE_CODE, name });
     defer gpa.free(svc);
 
+    // Renew the login being switched to before Claude Code gets it: one whose
+    // refresh token has lapsed leaves every CLI session failing to authenticate
+    // while Desktop, which signs in on its own, works. Skipped for the active
+    // profile, whose saved copy is older than the live login.
+    const switching = if (cur) |c_name| !std.mem.eql(u8, c_name, name) else true;
+    var lapsed = false;
+    if (switching) {
+        if (oauth_login.freshAccessToken(gpa, io, name, false)) |login| switch (login) {
+            .token => |t| {
+                @memset(t, 0);
+                gpa.free(t);
+            },
+            .needs_sign_in => lapsed = true,
+            .missing => {},
+        } else |_| {}
+    }
+
     const c_token = keychain.get(gpa, io, svc) catch null;
     defer if (c_token) |t| gpa.free(t);
     const c_acct = keychain.getAccount(gpa, io, svc);
@@ -215,7 +234,106 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     const msg = try std.fmt.allocPrint(gpa, "Switched to '{s}'", .{name});
     defer gpa.free(msg);
     display.ok(msg);
+    if (lapsed) signInAgain(gpa, io, h, name);
     return use_result;
+}
+
+/// Signs the now-active profile `name` in again after its login lapsed, then
+/// saves it, so the switch leaves Claude Code working. Needs a terminal for the
+/// browser sign-in; an unattended switch only warns.
+fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) void {
+    if (std.c.isatty(std.posix.STDIN_FILENO) != 1) {
+        display.print("⚠️  '{s}' Claude Code login can no longer be renewed, so Claude Code sessions will fail to sign in. Sign in again with: claude auth login, then: claudacity save {s}\n", .{ name, name });
+        return;
+    }
+    const want = profileJsonEmailIn(gpa, h, name) catch null;
+    defer if (want) |w| gpa.free(w);
+    if (want) |w| {
+        display.print("🔑  '{s}' Claude Code login has lapsed. Sign in as {s} in the private window that opens.\n", .{ name, w });
+    } else {
+        display.print("🔑  '{s}' Claude Code login has lapsed. Sign in again in the private window that opens.\n", .{name});
+    }
+
+    // `--email` does not choose the account: the browser authorizes whichever
+    // claude.ai account it is signed in to. claudacity stands in as the browser
+    // (`openPrivate`), so the sign-in starts from a private window with none.
+    var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var size: u32 = @intCast(exe_buf.len);
+    const browser = if (std.c._NSGetExecutablePath(&exe_buf, &size) == 0)
+        std.fmt.allocPrint(gpa, "BROWSER={s}", .{std.mem.sliceTo(&exe_buf, 0)}) catch return
+    else
+        gpa.dupe(u8, "BROWSER=open") catch return;
+    defer gpa.free(browser);
+    const argv: []const []const u8 = if (want) |w| &.{ "/usr/bin/env", browser, "claude", "auth", "login", "--email", w } else &.{ "/usr/bin/env", browser, "claude", "auth", "login" };
+    var child = std.process.spawn(io, .{ .argv = argv, .stdin = .inherit, .stdout = .inherit, .stderr = .inherit }) catch |err| {
+        display.print("❌  Could not run claude auth login: {s}\n", .{@errorName(err)});
+        return;
+    };
+    const term = child.wait(io) catch return;
+    if (term != .exited or term.exited != 0) {
+        display.print("❌  Sign-in did not finish. Run: claude auth login, then: claudacity save {s}\n", .{name});
+        return;
+    }
+
+    if (want) |w| {
+        const got = signedInEmail(gpa, io);
+        defer if (got) |g| gpa.free(g);
+        if (got == null or !std.ascii.eqlIgnoreCase(got.?, w)) {
+            display.print("❌  Signed in as {s}, not {s}, so '{s}' was not saved. Sign out of claude.ai in the browser, then run: claude auth login, and: claudacity save {s}\n", .{ got orelse "an unknown account", w, name, name });
+            return;
+        }
+    }
+    cmdSave(gpa, io, name) catch |err| {
+        display.print("❌  Signed in, but could not save '{s}': {s}\n", .{ name, @errorName(err) });
+        return;
+    };
+    const msg = std.fmt.allocPrint(gpa, "Signed '{s}' in again and saved it", .{name}) catch return;
+    defer gpa.free(msg);
+    display.ok(msg);
+}
+
+/// Opens `url` in a private browser window, which shares no sign-in with the
+/// reader's own windows. claudacity runs as `claude auth login`'s `BROWSER`.
+pub fn openPrivate(io: std.Io, url: []const u8) void {
+    // `open -na <app> --args --incognito` hands the URL to the running browser,
+    // which drops the flag, so the window is asked for by script. The terms are
+    // Brave's; without Brave the URL opens in the default browser.
+    const script =
+        \\on run argv
+        \\tell application "Brave Browser"
+        \\set w to make new window with properties {mode:"incognito"}
+        \\set URL of active tab of w to item 1 of argv
+        \\activate
+        \\end tell
+        \\end run
+    ;
+    if (std.Io.Dir.accessAbsolute(io, "/Applications/Brave Browser.app", .{})) |_| {
+        if (std.process.spawn(io, .{ .argv = &.{ "osascript", "-e", script, url }, .stdin = .ignore, .stdout = .ignore, .stderr = .ignore })) |spawned| {
+            var child = spawned;
+            if (child.wait(io)) |term| {
+                if (term == .exited and term.exited == 0) return;
+            } else |_| {}
+        } else |_| {}
+    } else |_| {}
+    var child = std.process.spawn(io, .{ .argv = &.{ "open", url }, .stdin = .ignore, .stdout = .ignore, .stderr = .ignore }) catch return;
+    _ = child.wait(io) catch {};
+}
+
+/// The account Claude Code is signed in as, from `claude auth status`.
+fn signedInEmail(gpa: std.mem.Allocator, io: std.Io) ?[]u8 {
+    const r = exec.run(gpa, io, .{ .argv = &.{ "claude", "auth", "status", "--json" }, .timeout_s = 30 }) catch return null;
+    defer r.deinit(gpa);
+    if (!r.ok()) return null;
+    return statusEmail(gpa, r.stdout);
+}
+
+pub fn statusEmail(gpa: std.mem.Allocator, status_json: []const u8) ?[]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, gpa, status_json, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const email = parsed.value.object.get("email") orelse return null;
+    if (email != .string) return null;
+    return gpa.dupe(u8, email.string) catch null;
 }
 
 pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
@@ -904,4 +1022,13 @@ test "pickerName extrai nome da linha" {
     try std.testing.expectEqualStrings("work", pickerName("work    \tme@work.com\n"));
     try std.testing.expectEqualStrings("personal", pickerName("personal\n"));
     try std.testing.expectEqualStrings("", pickerName("\n"));
+}
+
+test "statusEmail reads the signed-in account from claude auth status" {
+    const gpa = std.testing.allocator;
+    const got = statusEmail(gpa, "{\"loggedIn\":true,\"email\":\"a@b.com\"}").?;
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings("a@b.com", got);
+    try std.testing.expect(statusEmail(gpa, "{\"loggedIn\":false}") == null);
+    try std.testing.expect(statusEmail(gpa, "not json") == null);
 }

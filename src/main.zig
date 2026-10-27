@@ -189,6 +189,11 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         cmdCheckUpdateBg(gpa, io);
         return;
     }
+    // `claude auth login`'s BROWSER during a re-sign-in (profile.signInAgain)
+    if (std.mem.startsWith(u8, cmd, "https://")) {
+        profile.openPrivate(io, cmd);
+        return;
+    }
 
     const skip_check = std.mem.eql(u8, cmd, "update") or
         std.mem.eql(u8, cmd, "--version") or
@@ -293,7 +298,7 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         }
         return marketplaces.cmdSync(gpa, io);
     } else if (std.mem.eql(u8, cmd, "schedule")) {
-        return schedule.cmdSchedule(gpa, io, if (args.len >= 2) args[1] else null);
+        return schedule.cmdSchedule(gpa, io, if (args.len >= 2) args[1] else null, if (args.len >= 3) args[2] else null);
     } else if (std.mem.eql(u8, cmd, "logout-all")) {
         return profile.cmdLogoutAll(gpa, io);
     } else if (std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-v")) {
@@ -332,7 +337,8 @@ fn printHelp() void {
         \\                   env vars, setup script) from a profile (default: active) to the others
         \\  marketplaces sync  Re-sync the active account's claude.ai plugin marketplaces from
         \\                   their repos (use and handoff do this on every switch)
-        \\  schedule [install|uninstall|status]  Run claudacity handoff every night at 22:00 (launchd)
+        \\  schedule [install|uninstall|status] [handoff|logins]  Run claudacity handoff, or a
+        \\                   refresh that keeps every saved login alive, every night at 22:00 (launchd)
         \\  pick             Interactive profile picker (sk / fzf)
         \\  update [--verbose]  Update claudacity to the latest release
         \\  logout-all       Log out and remove all active symlinks
