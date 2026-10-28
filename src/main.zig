@@ -22,6 +22,7 @@ comptime {
     _ = @import("profile.zig");
     _ = @import("skills.zig");
     _ = @import("plugins.zig");
+    _ = @import("mcp.zig");
     _ = @import("desktop_settings.zig");
     _ = @import("exec.zig");
     _ = @import("http.zig");
@@ -325,7 +326,7 @@ fn printHelp() void {
         \\  use <name> [--no-carry-sessions]  Switch to a saved profile and move open local Code
         \\                   sessions with you, unless --no-carry-sessions leaves them behind
         \\  new <name>       Create a new empty profile slot
-        \\  share <source> <target>  Share local skills and plugins on each switch
+        \\  share <source> <target>  Share local skills, plugins and MCP servers on each switch
         \\  unshare <target>        Stop sharing and remove shared skill links
         \\  delete [name]    Delete a profile
         \\  list             List all saved profiles

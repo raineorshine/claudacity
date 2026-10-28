@@ -68,6 +68,12 @@ claudacity drives parts of Claude it does not own: Desktop's data directory, Cla
 - Sessions started from the CLI do not appear in Desktop's sidebar.
 - Headless runs inside a cloned repo load that repo's `.claude/` settings, hooks and `.mcp.json` unless given `--setting-sources user --strict-mcp-config`.
 
+## User-scoped MCP servers (observed Claude Code 2.1.312)
+
+- They live under `mcpServers` in the global config, `~/.claude.json` (a link to `~/.claude.<profile>.json`). claude.ai connectors are not stored there.
+- With `CLAUDE_CONFIG_DIR` set, Claude reads `$CLAUDE_CONFIG_DIR/.claude.json`, not `~/.claude.<profile>.json`; each `~/.claude.<profile>/` has its own small, unrelated `.claude.json`. To run `claude mcp` against an inactive profile, point `CLAUDE_CONFIG_DIR` at a directory holding only a `.claude.json` link to that profile's file: Claude writes through the link and leaves it a link (`src/mcp.zig`).
+- `claude mcp add-json` takes the entry only as an argument (no stdin, no `@file`), refuses a name that already exists (`remove` first), adds `"args": []` to a stdio entry without one, and drops keys it does not know.
+
 ## launchd
 
 - A `StartCalendarInterval` job missed while the Mac sleeps runs on wake. A job that must only act at night checks the clock itself (`src/handoff.zig`, night window).

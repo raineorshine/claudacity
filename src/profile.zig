@@ -8,6 +8,7 @@ const keychain = @import("keychain.zig");
 const paths = @import("paths.zig");
 const skills = @import("skills.zig");
 const plugins = @import("plugins.zig");
+const mcp = @import("mcp.zig");
 const sessions = @import("sessions.zig");
 const usage = @import("usage.zig");
 const marketplaces = @import("marketplaces.zig");
@@ -189,6 +190,15 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
         };
         if (plugin_result.installed + plugin_result.updated + plugin_result.toggled > 0) {
             display.print("Synced plugins into '{s}' ({d} installed, {d} updated, {d} enabled states matched)\n", .{ name, plugin_result.installed, plugin_result.updated, plugin_result.toggled });
+        }
+        // A missing MCP server costs a session one tool; a refused switch costs
+        // the account, so this one warns and switches anyway.
+        if (mcp.syncIn(gpa, io, h, source, name)) |mcp_result| {
+            if (mcp_result.added + mcp_result.updated > 0) {
+                display.print("Synced MCP servers into '{s}' ({d} added, {d} updated)\n", .{ name, mcp_result.added, mcp_result.updated });
+            }
+        } else |err| {
+            display.print("⚠️  Could not sync MCP servers into '{s}': {s}\n", .{ name, @errorName(err) });
         }
     }
 
@@ -517,14 +527,15 @@ pub fn cmdShare(gpa: std.mem.Allocator, io: std.Io, source: []const u8, target: 
     defer gpa.free(h);
     const count = try skills.shareIn(gpa, h, source, target);
     const plugin_result = try plugins.syncIn(gpa, io, h, source, target);
-    display.print("Sharing local skills and plugins from '{s}' to '{s}' ({d} new skill links, {d} plugins installed, {d} updated, {d} enabled states matched). Future additions sync when you switch to '{s}'.\n", .{ source, target, count, plugin_result.installed, plugin_result.updated, plugin_result.toggled, target });
+    const mcp_result = try mcp.syncIn(gpa, io, h, source, target);
+    display.print("Sharing local skills, plugins and MCP servers from '{s}' to '{s}' ({d} new skill links, {d} plugins installed, {d} updated, {d} enabled states matched, {d} MCP servers added, {d} updated). Future additions sync when you switch to '{s}'.\n", .{ source, target, count, plugin_result.installed, plugin_result.updated, plugin_result.toggled, mcp_result.added, mcp_result.updated, target });
 }
 
 pub fn cmdUnshare(gpa: std.mem.Allocator, target: []const u8) !void {
     const h = try paths.home(gpa);
     defer gpa.free(h);
     const count = try skills.unshareIn(gpa, h, target);
-    display.print("Stopped sharing skills and plugins into '{s}' ({d} shared skill links removed). Installed plugins remain in the profile.\n", .{ target, count });
+    display.print("Stopped sharing skills, plugins and MCP servers into '{s}' ({d} shared skill links removed). Installed plugins and MCP servers remain in the profile.\n", .{ target, count });
 }
 
 pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !void {
@@ -572,7 +583,7 @@ pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !voi
         defer if (source) |s| gpa.free(s);
         if (source) |s| {
             if (std.mem.eql(u8, s, name)) {
-                display.print("❌  Profile '{s}' supplies shared skills and plugins to '{s}'. Run `claudacity unshare {s}` first.\n", .{ name, p, p });
+                display.print("❌  Profile '{s}' supplies shared skills, plugins and MCP servers to '{s}'. Run `claudacity unshare {s}` first.\n", .{ name, p, p });
                 return error.ProfileHasSharedSkillsDependents;
             }
         }

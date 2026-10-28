@@ -2,7 +2,7 @@
 
 One Claude, many selves. Swap between Claude accounts (Code + Desktop) on macOS with a single command, and hand the day's work to the next account when one runs out of weekly usage.
 
-Claude Code credentials saved by claudacity live in macOS Keychain. Profile switching also moves and links Claude's existing configuration and Desktop data directories on disk. Optional sharing keeps local skills and user-installed plugins available in another profile while account data stays separate.
+Claude Code credentials saved by claudacity live in macOS Keychain. Profile switching also moves and links Claude's existing configuration and Desktop data directories on disk. Optional sharing keeps local skills, user-installed plugins and user-scoped MCP servers available in another profile while account data stays separate.
 
 ## Install
 
@@ -121,14 +121,14 @@ its "Check for updates" button, and prints the commit each one now holds.
 switching. It signs in with the claude.ai session that account's Claude Desktop
 holds; a failure only warns and never stops the switch.
 
-### Skills and plugins in a new profile
+### Skills, plugins and MCP servers in a new profile
 
 `claudacity new` creates an empty `~/.claude.<profile>/` directory. Claude Code user
-skills in `~/.claude/skills/` and installed plugins therefore do not appear in
-the new profile automatically. The account's conversations and credentials stay
+skills in `~/.claude/skills/`, installed plugins and user-scoped MCP servers
+therefore do not appear in the new profile automatically. The account's conversations and credentials stay
 separate too.
 
-To keep **local user skills and installed plugins** from `work` available in `personal`, opt in after
+To keep **local user skills, installed plugins and MCP servers** from `work` available in `personal`, opt in after
 creating both profiles:
 
 ```bash
@@ -152,12 +152,20 @@ before Claude Desktop is closed; retry when the marketplace is available.
 Plugins whose marketplace requires running an install command may still ask
 for explicit confirmation, which claudacity does not bypass.
 
+It also copies **user-scoped MCP servers** (`claude mcp add --scope user`, kept
+under `mcpServers` in `~/.claude.<profile>.json`) through `claude mcp add-json`.
+A server missing from `personal` is added; one that differs is replaced with
+`work`'s entry. Servers only `personal` has are kept, and removing a server from
+`work` leaves it in `personal`, as with plugins. claude.ai connectors (Gmail,
+Notion and the like) follow the signed-in account and are never copied. A
+failed MCP sync warns and the switch goes ahead.
+
 Run `claudacity unshare personal` to stop future syncing and remove skill links;
-already installed plugins remain. The source profile cannot be deleted while
+already installed plugins and MCP servers remain. The source profile cannot be deleted while
 another profile shares from it. `share-skills` and `unshare-skills` remain
 aliases for existing setups.
 
-Start a new Claude Code session to load newly installed plugins. Skills uploaded
+Start a new Claude Code session to load newly installed plugins and MCP servers. Skills uploaded
 in Claude's **Customize → Skills** are [tied to the signed-in Claude account](https://support.claude.com/en/articles/12512180-use-skills-in-claude);
 these local links do not copy those uploads to another account.
 
@@ -168,7 +176,7 @@ claudacity save <name>    Save current sessions (Code + Desktop) as a named prof
 claudacity use <name>     Switch to a saved profile, moving open local Code sessions with you
 claudacity use <name> --no-carry-sessions  Switch and leave open sessions on the old profile
 claudacity new <name>     Create a new empty profile slot (then: claude auth login)
-claudacity share <source> <target>  Share local skills and user plugins on each switch
+claudacity share <source> <target>  Share local skills, user plugins and MCP servers on each switch
 claudacity unshare <target>        Stop sharing and remove shared skill links
 claudacity delete <name>  Delete a profile and its data
 claudacity list           List all saved profiles
@@ -215,7 +223,7 @@ Each profile's account is recorded in `~/Library/Application Support/claudacity/
 
 ### Security model
 
-claudacity saves Claude Code session credentials in **macOS Keychain** and moves Claude's local configuration and Desktop data into profile-specific paths. When sharing is enabled, the target profile also contains a `.claudacity-skills-source` file naming the source profile; that relationship governs both local skills and user plugins.
+claudacity saves Claude Code session credentials in **macOS Keychain** and moves Claude's local configuration and Desktop data into profile-specific paths. When sharing is enabled, the target profile also contains a `.claudacity-skills-source` file naming the source profile; that relationship governs local skills, user plugins and user-scoped MCP servers.
 
 | Data | Where it lives |
 |---|---|
