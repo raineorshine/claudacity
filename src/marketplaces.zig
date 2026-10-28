@@ -97,6 +97,7 @@ const Task = struct {
     market: Marketplace,
     outcome: Outcome = undefined,
     arena: std.heap.ArenaAllocator,
+    progress: *display.Progress,
 
     fn request(t: *Task, io: std.Io, method: []const u8, route: []const u8) !Marketplace {
         const a = t.arena.allocator();
@@ -113,6 +114,7 @@ const Task = struct {
     }
 
     fn run(t: *Task, io: std.Io) void {
+        defer t.progress.tick();
         t.outcome = .{ .name = t.market.name, .result = .{ .failed = "unknown" } };
         const m = t.sync(io) catch |err| {
             if (err != error.HttpStatus) t.outcome.result = .{ .failed = @errorName(err) };
@@ -148,6 +150,7 @@ const Task = struct {
 /// concurrently. Everything is allocated in `arena`.
 pub fn syncIn(arena: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) !Report {
     const p_json = try paths.profileJsonIn(arena, h, name);
+    var progress: display.Progress = .{ .label = "Syncing claude.ai marketplaces" };
     const rel = sessions.accountRel(arena, io, p_json) catch return .{ .skipped = "the profile has no account in its .claude.<profile>.json" };
     const slash = std.mem.indexOfScalar(u8, rel, '/') orelse return .{ .skipped = "the profile has no organization" };
     const key = desktop.sessionKeyIn(arena, io, h) catch return .{ .skipped = "Claude Desktop holds no claude.ai sign-in" };
@@ -156,6 +159,8 @@ pub fn syncIn(arena: std.mem.Allocator, io: std.Io, h: []const u8, name: []const
         .org = rel[slash + 1 ..],
     };
 
+    progress.start(io);
+    defer progress.stop(io);
     const list_url = try std.fmt.allocPrint(arena, "{s}{s}/marketplaces/list-account-marketplaces", .{ BASE, creds.org });
     const hdrs = creds.headers();
     const resp = http.sendDirect(arena, io, .{ .url = list_url, .headers = &hdrs }) catch |err|
@@ -167,9 +172,10 @@ pub fn syncIn(arena: std.mem.Allocator, io: std.Io, h: []const u8, name: []const
     const markets = parseList(arena, resp.body) catch return .{ .skipped = "claude.ai's marketplace list had an unexpected shape" };
 
     const tasks = try arena.alloc(Task, markets.len);
+    progress.total = markets.len;
     var group: std.Io.Group = .init;
     for (markets, tasks) |m, *t| {
-        t.* = .{ .creds = creds, .market = m, .arena = .init(std.heap.smp_allocator) };
+        t.* = .{ .creds = creds, .market = m, .arena = .init(std.heap.smp_allocator), .progress = &progress };
         group.async(io, Task.run, .{ t, io });
     }
     group.await(io) catch {};

@@ -231,10 +231,12 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
         if (cur) |c_name| {
             if (std.mem.eql(u8, c_name, name)) {
                 // Nothing to move: the sessions are already on this profile.
-            } else if (carrySessions(gpa, io, h, c_name, name)) |carried| {
-                use_result.carry = carried;
-            } else |err| {
-                use_result.carry_skipped = @errorName(err);
+            } else {
+                var progress: display.Progress = .{ .label = "Carrying open sessions" };
+                progress.start(io);
+                const carried = carrySessions(gpa, io, h, c_name, name);
+                progress.stop(io);
+                if (carried) |moved| use_result.carry = moved else |err| use_result.carry_skipped = @errorName(err);
             }
         }
     }

@@ -5,6 +5,7 @@
 //! não precisamos da abstração Io só para println.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @cImport({
     @cInclude("time.h");
 });
@@ -61,6 +62,51 @@ pub fn section(title: []const u8) void {
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     printOut(fmt, args);
 }
+
+/// A live line for a slow step: spinner, label, `done/total` once `total` is
+/// set, and seconds elapsed, redrawn in place until `stop` clears it. Off a
+/// terminal it prints the label once as an info line. Nothing else may print
+/// between `start` and `stop`.
+pub const Progress = struct {
+    label: []const u8,
+    total: usize = 0,
+    done: std.atomic.Value(usize) = .init(0),
+    future: ?std.Io.Future(void) = null,
+
+    const frames = [_][]const u8{ "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
+
+    pub fn start(p: *Progress, io: std.Io) void {
+        if (builtin.is_test) return;
+        if (std.c.isatty(std.posix.STDOUT_FILENO) != 1) return info(p.label);
+        p.future = io.concurrent(spin, .{ p, io }) catch return info(p.label);
+    }
+
+    pub fn tick(p: *Progress) void {
+        _ = p.done.fetchAdd(1, .monotonic);
+    }
+
+    pub fn stop(p: *Progress, io: std.Io) void {
+        var f = p.future orelse return;
+        f.cancel(io);
+        p.future = null;
+        writeStdout("\r\x1b[2K");
+    }
+
+    fn spin(p: *Progress, io: std.Io) void {
+        const started = std.Io.Timestamp.now(io, .awake);
+        var i: usize = 0;
+        while (true) : (i += 1) {
+            const secs = @divTrunc(started.untilNow(io, .awake).toMilliseconds(), 1000);
+            const frame = frames[i % frames.len];
+            if (p.total > 0) {
+                printOut("\r\x1b[2K{s}   {s}... {d}/{d}  {d}s", .{ frame, p.label, p.done.load(.monotonic), p.total, secs });
+            } else {
+                printOut("\r\x1b[2K{s}   {s}... {d}s", .{ frame, p.label, secs });
+            }
+            io.sleep(.fromMilliseconds(100), .awake) catch return;
+        }
+    }
+};
 
 /// Formata ms de expiração como string humana. Caller libera.
 pub fn fmtExpiry(allocator: std.mem.Allocator, expires_ms: i64) ![]const u8 {
