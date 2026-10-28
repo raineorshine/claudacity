@@ -126,6 +126,11 @@ runs nothing against the user's profiles.
 **If the build fails,** the ship has still happened and the installed claudacity is unchanged: one line in the
 report, and remove the throwaway worktree with `git worktree remove --force "$BUILD"`.
 
+The chain skips the `git worktree remove` when the build fails, so remove `$BUILD` by hand. When the
+failure is the disk filling up (`No space left on device`) and `git diff --quiet HEAD origin/main`
+holds, this checkout's own `zig-out/bin/claudacity` is the ReleaseSmall build of the same tree from
+step 1: install that one with the same copy, `mv` and `ln` instead.
+
 ### 8. Put `🚀 ` on the title
 
 The push in step 5 is what counts as shipped, whatever step 7 managed, so the prefix goes on here and
