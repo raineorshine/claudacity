@@ -874,10 +874,10 @@ fn ensureCurrentSavedIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) !v
 }
 
 /// Linhas do picker: nome alinhado + tab + email (se houver). Caller libera.
-/// One picker line per profile: the name, then its label (weekly usage in `claudacity pick`) when
-/// given, then the email.
+/// One picker line per profile: the name, then the email, then its label (usage in
+/// `claudacity pick`) when given. The first line is a header naming those columns.
 pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8) ![]const []const u8 {
-    var width: usize = 0;
+    var width: usize = "profile".len;
     for (profiles) |p| width = @max(width, p.len);
 
     var lines: std.ArrayList([]const u8) = .empty;
@@ -897,23 +897,46 @@ pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const
         e.* = try profileJsonEmailIn(gpa, base, p);
         if (e.*) |s| email_width = @max(email_width, s.len);
     }
+    if (email_width > 0) email_width = @max(email_width, "email".len);
 
-    // name, email, then usage; emails are padded so the usage column lines up.
+    const header_email: ?[]const u8 = if (email_width > 0) "email" else null;
+    const header_label: ?[]const u8 = if (labels != null) usage.PICKER_HEADER else null;
+    const header = try pickerLine(gpa, "profile", width, header_email, email_width, header_label);
+    defer gpa.free(header);
+    try lines.append(gpa, try expandTabs(gpa, header));
     for (profiles, emails, 0..) |p, email, i| {
         const label: ?[]const u8 = if (labels) |ls| ls[i] else null;
-        var line: std.ArrayList(u8) = .empty;
-        errdefer line.deinit(gpa);
-        try line.appendSlice(gpa, p);
-        if (label != null or email != null) try line.appendNTimes(gpa, ' ', width - p.len);
-        if (email != null or (label != null and email_width > 0)) {
-            const e = email orelse "";
-            try line.print(gpa, "\t{s}", .{e});
-            if (label != null) try line.appendNTimes(gpa, ' ', email_width - e.len);
-        }
-        if (label) |l| try line.print(gpa, "\t{s}", .{l});
-        try lines.append(gpa, try line.toOwnedSlice(gpa));
+        try lines.append(gpa, try pickerLine(gpa, p, width, email, email_width, label));
     }
     return lines.toOwnedSlice(gpa);
+}
+
+/// Tabs as spaces to the next 8-column stop, where sk puts them in a row: sk drops the tabs of a
+/// header line, so the header is expanded up front to line up with the rows under it.
+fn expandTabs(gpa: std.mem.Allocator, line: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (line) |ch| {
+        if (ch == '\t') {
+            try out.appendNTimes(gpa, ' ', 8 - out.items.len % 8);
+        } else try out.append(gpa, ch);
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+// name, email, then usage; emails are padded so the usage column lines up.
+fn pickerLine(gpa: std.mem.Allocator, name: []const u8, width: usize, email: ?[]const u8, email_width: usize, label: ?[]const u8) ![]const u8 {
+    var line: std.ArrayList(u8) = .empty;
+    errdefer line.deinit(gpa);
+    try line.appendSlice(gpa, name);
+    if (label != null or email != null) try line.appendNTimes(gpa, ' ', width - name.len);
+    if (email != null or (label != null and email_width > 0)) {
+        const e = email orelse "";
+        try line.print(gpa, "\t{s}", .{e});
+        if (label != null) try line.appendNTimes(gpa, ' ', email_width - e.len);
+    }
+    if (label) |l| try line.print(gpa, "\t{s}", .{l});
+    return line.toOwnedSlice(gpa);
 }
 
 /// Extrai o nome do perfil de uma linha escolhida no picker.
@@ -932,9 +955,10 @@ fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []c
         gpa.free(items);
     }
 
+    // The first item is the column header; --reverse draws it above the profiles instead of below.
     // stdin=pipe (we write items), stdout=pipe (we read selection), stderr=inherit (sk renders UI to terminal)
     var child = try std.process.spawn(io, .{
-        .argv = &.{ cmd, "--ansi", "--prompt", prompt },
+        .argv = &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt },
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .inherit,
@@ -1123,24 +1147,26 @@ test "pickerLinesIn alinha nome e email" {
         for (lines) |l| alloc.free(l);
         alloc.free(lines);
     }
-    try std.testing.expectEqualStrings("personal", lines[0]);
-    try std.testing.expectEqualStrings("work    \tme@work.com", lines[1]);
+    try std.testing.expectEqualStrings("profile         email", lines[0]);
+    try std.testing.expectEqualStrings("personal", lines[1]);
+    try std.testing.expectEqualStrings("work    \tme@work.com", lines[2]);
 
     const labeled = try pickerLinesIn(alloc, base, &.{ "personal", "work" }, &.{ "7d 10%", null });
     defer {
         for (labeled) |l| alloc.free(l);
         alloc.free(labeled);
     }
-    try std.testing.expectEqualStrings("personal\t           \t7d 10%", labeled[0]);
-    try std.testing.expectEqualStrings("work    \tme@work.com", labeled[1]);
+    try std.testing.expectEqualStrings("profile         email           " ++ usage.PICKER_HEADER, labeled[0]);
+    try std.testing.expectEqualStrings("personal\t           \t7d 10%", labeled[1]);
+    try std.testing.expectEqualStrings("work    \tme@work.com", labeled[2]);
 
     const both = try pickerLinesIn(alloc, base, &.{"work"}, &.{"7d 10%"});
     defer {
         for (both) |l| alloc.free(l);
         alloc.free(both);
     }
-    try std.testing.expectEqualStrings("work\tme@work.com\t7d 10%", both[0]);
-    try std.testing.expectEqualStrings("personal", pickerName(labeled[0]));
+    try std.testing.expectEqualStrings("work   \tme@work.com\t7d 10%", both[1]);
+    try std.testing.expectEqualStrings("personal", pickerName(labeled[1]));
 }
 
 test "pickerName extrai nome da linha" {

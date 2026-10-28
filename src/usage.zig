@@ -312,21 +312,27 @@ fn formatWindow(buf: []u8, window: ?Window, color: bool, now: ?i64) []const u8 {
     return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), resets, width }) catch "";
 }
 
-/// The weekly column `claudacity pick` shows beside a profile, the same width for every state.
-pub fn weeklyLabel(buf: []u8, state: State, color: bool) []const u8 {
+/// The header over `pickerLabel`'s columns.
+pub const PICKER_HEADER = std.fmt.comptimePrint("{s:>6}  {s:>6}  {s}", .{ "5h", "7d", "resets" });
+
+/// The usage column `claudacity pick` shows beside a profile: 5-hour and weekly percentages, then
+/// the weekly reset, the same width for every state.
+pub fn pickerLabel(buf: []u8, state: State, color: bool) []const u8 {
     const text: []const u8 = switch (state) {
         .usage => |u| {
+            var p: [32]u8 = undefined;
             var w: [128]u8 = undefined;
-            return std.fmt.bufPrint(buf, "7d {s}", .{formatWindow(&w, u.seven_day, color, null)}) catch "";
+            const five = if (u.five_hour) |f| formatPct(&p, f.pct, color) else "    --";
+            return std.fmt.bufPrint(buf, "{s}  {s}", .{ five, formatWindow(&w, u.seven_day, color, null) }) catch "";
         },
         .needs_sign_in => "needs signing in again",
         .no_login => "no saved login",
         .failed => "usage could not be read",
     };
-    return std.fmt.bufPrint(buf, "{s:<44}", .{text}) catch "";
+    return std.fmt.bufPrint(buf, "{s:<49}", .{text}) catch "";
 }
 
-/// Weekly labels for `claudacity pick`, one per profile in `names` order; null where a profile has
+/// Usage labels for `claudacity pick`, one per profile in `names` order; null where a profile has
 /// no row. Skips the plan refresh, which pick does not show. Caller frees with `freeLabels`.
 pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u8) ![]?[]const u8 {
     const rows = try collectWith(gpa, io, .{ .sync_plan = false });
@@ -339,7 +345,7 @@ pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u
         for (rows) |row| {
             if (!std.mem.eql(u8, row.name, name)) continue;
             var buf: [192]u8 = undefined;
-            label.* = try gpa.dupe(u8, weeklyLabel(&buf, row.state, color));
+            label.* = try gpa.dupe(u8, pickerLabel(&buf, row.state, color));
             break;
         }
     }
@@ -457,13 +463,21 @@ test "formatReset reads like Thu Oct 1 @ 1pm EDT" {
     try std.testing.expectEqualStrings("Fri Oct 2 @ 12am EDT", formatReset(&buf, 1790874000 + 11 * 3600));
 }
 
-test "weeklyLabel keeps one width across states" {
+test "pickerLabel keeps one width across states" {
     var b1: [192]u8 = undefined;
     var b2: [192]u8 = undefined;
-    const read = weeklyLabel(&b1, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false);
-    const failed = weeklyLabel(&b2, .failed, false);
-    try std.testing.expect(std.mem.startsWith(u8, read, "7d  77.0%  (resets "));
+    var b3: [192]u8 = undefined;
+    const read = pickerLabel(&b1, .{ .usage = .{
+        .five_hour = .{ .pct = 4, .resets_at = 1790874000 },
+        .seven_day = .{ .pct = 77, .resets_at = 1790874000 },
+    } }, false);
+    const idle = pickerLabel(&b2, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false);
+    const failed = pickerLabel(&b3, .failed, false);
+    try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%   77.0%  (resets "));
+    try std.testing.expect(std.mem.startsWith(u8, idle, "    --   77.0%  (resets "));
+    try std.testing.expectEqual(read.len, idle.len);
     try std.testing.expectEqual(read.len, failed.len);
+    try std.testing.expectEqualStrings("    5h      7d  resets", PICKER_HEADER);
 }
 
 test "parseUsage rejects non-JSON" {

@@ -173,7 +173,7 @@ claudacity unshare <target>        Stop sharing and remove shared skill links
 claudacity delete <name>  Delete a profile and its data
 claudacity list           List all saved profiles
 claudacity whoami         Show active session info (Code + Desktop + saved profiles)
-claudacity pick           Interactive fuzzy picker (sk / fzf) with each profile's weekly usage
+claudacity pick           Interactive fuzzy picker (sk / fzf) with each profile's 5-hour and weekly usage
 claudacity update         Update claudacity to the latest release
 claudacity logout-all     Log out of all accounts and remove active symlinks
 claudacity usage          Show 5-hour and weekly usage for every profile
@@ -205,7 +205,7 @@ What stays behind: chats (Desktop Chat tab and mobile), and cloud sessions older
 
 The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:00, launchd runs it on wake; outside that window it switches nothing and notifies you instead.
 
-`claudacity usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `claudacity pick` shows each profile's email, then its weekly percentage colored the same way. The 5-hour reset reads as time left, like `in 3h 12m`; the weekly reset reads like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
+`claudacity usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `claudacity pick` shows a header row over each profile's email, its 5-hour and weekly percentages colored the same way, and the weekly reset. The 5-hour reset reads as time left, like `in 3h 12m`; the weekly reset reads like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
 
 Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, so whichever account claude.ai, Claude Desktop or Claude Code is signed in to elsewhere does not matter, checks the account it gets is the profile's, offering the window again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity use <name>`.
 
