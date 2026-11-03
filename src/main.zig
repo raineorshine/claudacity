@@ -231,6 +231,8 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, cmd, "switch")) {
         display.info("'switch' is deprecated, use 'use' instead");
         return profile.cmdUse(gpa, io, try needsName(args, "switch"), .{});
+    } else if (std.mem.eql(u8, cmd, "login")) {
+        return profile.cmdLogin(gpa, io, try needsName(args, "login"));
     } else if (std.mem.eql(u8, cmd, "new")) {
         return profile.cmdNew(gpa, io, try needsName(args, "new"));
     } else if (std.mem.eql(u8, cmd, "share") or std.mem.eql(u8, cmd, "share-skills")) {
@@ -325,6 +327,7 @@ fn printHelp() void {
         \\  save <name>      Save current sessions as a named profile
         \\  use <name> [--no-carry-sessions]  Switch to a saved profile and move open local Code
         \\                   sessions with you, unless --no-carry-sessions leaves them behind
+        \\  login <name>     Sign a profile in again without switching to it
         \\  new <name>       Create a new empty profile slot
         \\  share <source> <target>  Share local skills, plugins and MCP servers on each switch
         \\  unshare <target>        Stop sharing and remove shared skill links

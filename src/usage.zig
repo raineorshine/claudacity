@@ -87,6 +87,11 @@ pub fn parseUsage(gpa: std.mem.Allocator, body: []const u8) !Usage {
 }
 
 pub fn fetch(gpa: std.mem.Allocator, io: std.Io, access_token: []const u8) !Usage {
+    return fetchStatus(gpa, io, access_token, null);
+}
+
+/// `fetch`, also setting `status` to the usage endpoint's HTTP status.
+pub fn fetchStatus(gpa: std.mem.Allocator, io: std.Io, access_token: []const u8, status: ?*u16) !Usage {
     const auth = try std.fmt.allocPrint(gpa, "Bearer {s}", .{access_token});
     defer {
         @memset(auth, 0);
@@ -100,15 +105,32 @@ pub fn fetch(gpa: std.mem.Allocator, io: std.Io, access_token: []const u8) !Usag
         },
     });
     defer resp.deinit(gpa);
+    if (status) |st| st.* = resp.status;
     if (resp.status != 200) return error.UsageRequestFailed;
     return parseUsage(gpa, resp.body);
 }
+
+/// Why a profile's usage could not be read: the step that failed and, when it got an
+/// answer, the HTTP status.
+pub const Failure = struct {
+    step: enum { login, refresh, usage } = .login,
+    status: u16 = 0,
+
+    /// "usage could not be read" with the step and status, e.g. "(usage: HTTP 429)".
+    pub fn label(f: Failure, buf: []u8) []const u8 {
+        const step = @tagName(f.step);
+        return if (f.status != 0)
+            std.fmt.bufPrint(buf, "usage could not be read ({s}: HTTP {d})", .{ step, f.status }) catch "usage could not be read"
+        else
+            std.fmt.bufPrint(buf, "usage could not be read ({s} failed)", .{step}) catch "usage could not be read";
+    }
+};
 
 pub const State = union(enum) {
     usage: Usage,
     needs_sign_in,
     no_login,
-    failed,
+    failed: Failure,
 };
 
 pub const ProfileUsage = struct {
@@ -144,7 +166,7 @@ pub fn collectWith(gpa: std.mem.Allocator, io: std.Io, opts: CollectOptions) ![]
         row.* = .{
             .name = name,
             .active = if (current) |cur| std.mem.eql(u8, cur, name) else false,
-            .state = .failed,
+            .state = .{ .failed = .{} },
         };
     }
 
@@ -156,7 +178,9 @@ pub fn collectWith(gpa: std.mem.Allocator, io: std.Io, opts: CollectOptions) ![]
 
 fn readState(gpa: std.mem.Allocator, io: std.Io, row: *ProfileUsage, opts: CollectOptions) void {
     row.state = blk: {
-        const login = oauth.freshAccessToken(gpa, io, row.name, row.active) catch break :blk .failed;
+        var status: u16 = 0;
+        const login = oauth.freshAccessTokenWith(gpa, io, row.name, row.active, .{ .status = &status }) catch
+            break :blk .{ .failed = .{ .step = if (status != 0) .refresh else .login, .status = status } };
         switch (login) {
             .token => |t| {
                 defer {
@@ -164,7 +188,8 @@ fn readState(gpa: std.mem.Allocator, io: std.Io, row: *ProfileUsage, opts: Colle
                     gpa.free(t);
                 }
                 if (opts.sync_plan) oauth.syncPlan(gpa, io, row.name, t) catch {};
-                break :blk if (fetch(gpa, io, t)) |u| .{ .usage = u } else |_| .failed;
+                status = 0;
+                break :blk if (fetchStatus(gpa, io, t, &status)) |u| .{ .usage = u } else |_| .{ .failed = .{ .step = .usage, .status = status } };
             },
             .needs_sign_in => break :blk .needs_sign_in,
             .missing => break :blk .no_login,
@@ -318,6 +343,7 @@ pub const PICKER_HEADER = std.fmt.comptimePrint("{s:>6}  {s:>6}  {s}", .{ "5h", 
 /// The usage column `claudacity pick` shows beside a profile: 5-hour and weekly percentages, then
 /// the weekly reset, the same width for every state.
 pub fn pickerLabel(buf: []u8, state: State, color: bool) []const u8 {
+    var why: [64]u8 = undefined;
     const text: []const u8 = switch (state) {
         .usage => |u| {
             var p: [32]u8 = undefined;
@@ -327,7 +353,7 @@ pub fn pickerLabel(buf: []u8, state: State, color: bool) []const u8 {
         },
         .needs_sign_in => "needs signing in again",
         .no_login => "no saved login",
-        .failed => "usage could not be read",
+        .failed => |f| f.label(&why),
     };
     return std.fmt.bufPrint(buf, "{s:<49}", .{text}) catch "";
 }
@@ -371,9 +397,12 @@ pub fn printRows(rows: []const ProfileUsage) void {
                     formatWindow(&b1, u.five_hour, color, now), formatWindow(&b2, u.seven_day, color, null),
                 });
             },
-            .needs_sign_in => display.print("{s}{s:<12} needs signing in again (saved login is no longer valid)\n", .{ marker, row.name }),
+            .needs_sign_in => display.print("{s}{s:<12} needs signing in again (run: claudacity login {s})\n", .{ marker, row.name, row.name }),
             .no_login => display.print("{s}{s:<12} no saved Claude Code login\n", .{ marker, row.name }),
-            .failed => display.print("{s}{s:<12} usage could not be read\n", .{ marker, row.name }),
+            .failed => |f| {
+                var why: [64]u8 = undefined;
+                display.print("{s}{s:<12} {s}\n", .{ marker, row.name, f.label(&why) });
+            },
         }
     }
 }
@@ -472,7 +501,7 @@ test "pickerLabel keeps one width across states" {
         .seven_day = .{ .pct = 77, .resets_at = 1790874000 },
     } }, false);
     const idle = pickerLabel(&b2, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false);
-    const failed = pickerLabel(&b3, .failed, false);
+    const failed = pickerLabel(&b3, .{ .failed = .{ .step = .usage, .status = 429 } }, false);
     try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%   77.0%  (resets "));
     try std.testing.expect(std.mem.startsWith(u8, idle, "    --   77.0%  (resets "));
     try std.testing.expectEqual(read.len, idle.len);
