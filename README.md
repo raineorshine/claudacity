@@ -175,7 +175,6 @@ these local links do not copy those uploads to another account.
 claudacity save <name>    Save current sessions (Code + Desktop) as a named profile
 claudacity use <name>     Switch to a saved profile, moving open local Code sessions with you
 claudacity use <name> --no-carry-sessions  Switch and leave open sessions on the old profile
-claudacity login <name>   Sign a profile in again without switching to it
 claudacity new <name>     Create a new empty profile slot (then: claude auth login)
 claudacity share <source> <target>  Share local skills, user plugins and MCP servers on each switch
 claudacity unshare <target>        Stop sharing and remove shared skill links
@@ -216,7 +215,7 @@ The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:
 
 `claudacity usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `claudacity pick` shows a header row over each profile's email, its 5-hour and weekly percentages colored the same way, and the weekly reset. The 5-hour reset reads as time left, like `in 3h 12m`; the weekly reset reads like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
 
-Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, so whichever account claude.ai, Claude Desktop or Claude Code is signed in to elsewhere does not matter, checks the account it gets is the profile's, offering the window again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity login <name>`. `claudacity login <name>` signs a profile in the same way without switching to it, leaving Claude Desktop, open sessions and the active profile as they are. A switch also renews the login of the profile it leaves, so a `claude` session still running as that account cannot make the saved login stale.
+Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, so whichever account claude.ai, Claude Desktop or Claude Code is signed in to elsewhere does not matter, checks the account it gets is the profile's, offering the window again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity use <name>`.
 
 Each profile's account is recorded in `~/Library/Application Support/claudacity/accounts.json`, first from the email `claudacity whoami` shows for it. A switch never saves a Claude Code login for another account over the profile you are leaving, and never hands one profile's login to another. `claudacity save <name>` records whatever account is signed in as the profile's, which is how to change it.
 
@@ -271,14 +270,13 @@ zig build test
 
 CI runs on every push: `zig build` (debug) and `zig build test`.
 
-Releases are built automatically when a tag is pushed:
+Releases are built on a Mac, not in GitHub Actions. From a clean checkout of `origin/main`:
 
 ```bash
-git tag v0.2.0
-git push origin --tags
+scripts/release.sh 1.2.3
 ```
 
-GitHub Actions cross-compiles arm64 and x86_64 binaries (`-Doptimize=ReleaseSmall`) and publishes them to the release.
+It bumps the version, writes the changelog entry, cross-compiles the arm64 and x86_64 binaries (`-Doptimize=ReleaseSmall`), pushes the release commit and tag, and publishes both binaries to the GitHub release.
 
 ## License
 

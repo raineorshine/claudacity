@@ -41,7 +41,7 @@ comptime {
 const KEYCHAIN_CODE = "Claude Code-credentials";
 const KC_PROFILE_CODE = "claudacity-code-";
 const GITHUB_REPO = "raineorshine/claudacity";
-const VERSION = "0.2.6"; // x-release-please-version
+const VERSION = "0.2.6"; // x-release-version
 const UPDATE_CACHE_FILE = "/tmp/claudacity-update-cache";
 const UPDATE_CHECK_INTERVAL_S = 86400; // 24h
 
@@ -231,8 +231,6 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
     } else if (std.mem.eql(u8, cmd, "switch")) {
         display.info("'switch' is deprecated, use 'use' instead");
         return profile.cmdUse(gpa, io, try needsName(args, "switch"), .{});
-    } else if (std.mem.eql(u8, cmd, "login")) {
-        return profile.cmdLogin(gpa, io, try needsName(args, "login"));
     } else if (std.mem.eql(u8, cmd, "new")) {
         return profile.cmdNew(gpa, io, try needsName(args, "new"));
     } else if (std.mem.eql(u8, cmd, "share") or std.mem.eql(u8, cmd, "share-skills")) {
@@ -327,7 +325,6 @@ fn printHelp() void {
         \\  save <name>      Save current sessions as a named profile
         \\  use <name> [--no-carry-sessions]  Switch to a saved profile and move open local Code
         \\                   sessions with you, unless --no-carry-sessions leaves them behind
-        \\  login <name>     Sign a profile in again without switching to it
         \\  new <name>       Create a new empty profile slot
         \\  share <source> <target>  Share local skills, plugins and MCP servers on each switch
         \\  unshare <target>        Stop sharing and remove shared skill links
@@ -363,7 +360,7 @@ fn doctorFail(label: []const u8, detail: []const u8) void {
 }
 
 fn cmdDoctor(gpa: std.mem.Allocator, io: std.Io) !void {
-    display.print("\ncsw doctor\n\n", .{});
+    display.print("\nclaudacity doctor\n\n", .{});
     var issues: usize = 0;
 
     // ── Claude Desktop ───────────────────────────────────────────────────────

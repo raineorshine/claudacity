@@ -25,7 +25,7 @@ often on some other branch.
 zig build && zig build -Doptimize=ReleaseSmall && zig build test
 ```
 
-Judge `zig build test` by its exit code, not its output (AGENTS.md "Gates"). Fix
+Judge `zig build test` by its exit code and `Build Summary`, not its output (AGENTS.md "Gates"). Fix
 every failure and re-run until clean.
 
 ### 2. Commit all staged and unstaged changes
@@ -38,7 +38,7 @@ Bring the writing level with the change first, so it lands in this ship rather t
   Claude Code or Anthropic's endpoints behave.
 - **`AGENTS.md` and this skill**, where the change made something they say untrue.
 
-Leave `CHANGELOG.md` alone: release-please writes it from the commit messages.
+Leave `CHANGELOG.md` alone: `scripts/release.sh` writes it from the commit messages.
 
 Then generate the message from the diff: Conventional Commits — `feat:`, `fix:`, `docs:`, `chore:` —
 with a lower-case subject under about 60 characters, and a body that says why rather than what. The
@@ -98,6 +98,20 @@ This is the ship. `origin` is `raineorshine/claudacity`; never push to `fork` (`
 
 **If the push is rejected as non-fast-forward,** someone else landed first and nothing was lost: go
 back to step 3, redo step 4 onto the new base, and push again.
+
+### 5a. Cut a release, only when asked
+
+When the user asked for a release with the ship ("ship and release", "cut 1.1.0"), publish it now,
+before step 6 moves the local main and step 7 rebuilds, so both pick up the bumped version:
+
+```bash
+scripts/release.sh <version>
+```
+
+Take the version the user named; otherwise bump by the commits since the last `v*` tag — major for a
+`!`, minor for a `feat:`, patch for the rest. HEAD must equal `origin/main`, which it does right after
+step 5. The script pushes its own release commit and tag. If it fails before its push, `git checkout --
+build.zig.zon src/main.zig CHANGELOG.md` and report it; the ship itself has already landed.
 
 ### 6. Move the local main
 

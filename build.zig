@@ -12,6 +12,13 @@ pub fn build(b: *std.Build) void {
     });
     root_mod.linkSystemLibrary("sqlite3", .{});
     root_mod.link_libc = true;
+    // A cross build (`scripts/release.sh`) gets no SDK paths of its own, so it
+    // finds sqlite3 in the macOS SDK passed as --sysroot. The linker resolves a
+    // library path inside the sysroot; the compiler takes an include path as is.
+    if (b.sysroot) |sdk| {
+        root_mod.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ sdk, "usr/include" }) });
+        root_mod.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    }
 
     const exe = b.addExecutable(.{
         .name = "claudacity",

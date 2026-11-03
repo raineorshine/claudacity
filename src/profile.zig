@@ -96,32 +96,11 @@ fn saveAs(gpa: std.mem.Allocator, io: std.Io, name: []const u8, kind: SaveKind) 
         const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KC_PROFILE_CODE, name });
         defer gpa.free(svc);
         try keychain.set(gpa, io, svc, c_acct, token);
-        if (kind == .auto) renewSaved(gpa, io, name);
     }
 
     const msg = try std.fmt.allocPrint(gpa, "Profile '{s}' saved", .{name});
     defer gpa.free(msg);
     display.ok(msg);
-}
-
-/// Renews the login just saved from Claude Code before the switch away from `name`.
-/// `claude` processes still running as `name` hold the same login, and whichever
-/// side renews it first leaves the other's copy dead; renewing now makes the saved
-/// copy the live one. Those processes re-read Claude Code's stored login when their
-/// renewal fails, so they move to the incoming account rather than signing out.
-fn renewSaved(gpa: std.mem.Allocator, io: std.Io, name: []const u8) void {
-    const login = oauth_login.freshAccessTokenWith(gpa, io, name, true, .{ .force = true }) catch |err| {
-        display.print("⚠️  Could not renew '{s}''s login ({s}); a session still running as it may leave it needing sign-in.\n", .{ name, @errorName(err) });
-        return;
-    };
-    switch (login) {
-        .token => |t| {
-            @memset(t, 0);
-            gpa.free(t);
-        },
-        .needs_sign_in => display.print("⚠️  '{s}''s login is no longer valid; sign in again with: claudacity login {s}\n", .{ name, name }),
-        .missing => {},
-    }
 }
 
 /// Switches to `name` and reports which open sessions were carried.
@@ -360,7 +339,7 @@ fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const 
         .other_account => |got| display.print("🔑  '{s}' saved Claude Code login is {s}, not {s}.\n", .{ name, got, as }),
     }
     if (std.c.isatty(std.posix.STDIN_FILENO) != 1) {
-        display.print("⚠️  Claude Code is signed out, so its sessions will fail. Sign in again with: claudacity login {s}\n", .{name});
+        display.print("⚠️  Claude Code is signed out, so its sessions will fail. Sign in again with: claudacity use {s}\n", .{name});
         return;
     }
 
@@ -395,19 +374,13 @@ fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const 
 
     keychain.delete(gpa, io, KEYCHAIN_CODE) catch {};
     if (before) |b| writeFileAll(gpa, json_path, b) catch {};
-    display.print("⚠️  Claude Code is left signed out under '{s}'. Sign in again with: claudacity login {s}\n", .{ name, name });
+    display.print("⚠️  Claude Code is left signed out under '{s}'. Sign in again with: claudacity use {s}\n", .{ name, name });
 }
 
 /// Runs `claude auth login` with claudacity as its browser, which opens the
 /// sign-in in a private window: `--email` only pre-fills the form, and a normal
 /// window authorizes whichever claude.ai account it is signed in to.
 fn runLogin(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8) bool {
-    return runLoginIn(gpa, io, want, null);
-}
-
-/// `runLogin` with `CLAUDE_CONFIG_DIR=config_dir`, whose login Claude Code keeps
-/// in its own Keychain entry (`oauth.configDirService`), apart from the live one.
-fn runLoginIn(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8, config_dir: ?[]const u8) bool {
     var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
     var size: u32 = @intCast(exe_buf.len);
     const browser = if (std.c._NSGetExecutablePath(&exe_buf, &size) == 0)
@@ -415,20 +388,7 @@ fn runLoginIn(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8, config_dir:
     else
         gpa.dupe(u8, "BROWSER=open") catch return false;
     defer gpa.free(browser);
-    const config_env = if (config_dir) |d| std.fmt.allocPrint(gpa, "CLAUDE_CONFIG_DIR={s}", .{d}) catch return false else null;
-    defer if (config_env) |e| gpa.free(e);
-    var argv_buf: [8][]const u8 = undefined;
-    var argv_len: usize = 0;
-    for ([_]?[]const u8{ "/usr/bin/env", browser, config_env, "claude", "auth", "login" }) |a| if (a) |arg| {
-        argv_buf[argv_len] = arg;
-        argv_len += 1;
-    };
-    if (want) |w| {
-        argv_buf[argv_len] = "--email";
-        argv_buf[argv_len + 1] = w;
-        argv_len += 2;
-    }
-    const argv: []const []const u8 = argv_buf[0..argv_len];
+    const argv: []const []const u8 = if (want) |w| &.{ "/usr/bin/env", browser, "claude", "auth", "login", "--email", w } else &.{ "/usr/bin/env", browser, "claude", "auth", "login" };
     var child = std.process.spawn(io, .{ .argv = argv, .stdin = .inherit, .stdout = .inherit, .stderr = .inherit }) catch |err| {
         display.print("❌  Could not run claude auth login: {s}\n", .{@errorName(err)});
         return false;
@@ -712,84 +672,6 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
         defer gpa.free(chosen);
         try cmdUse(gpa, io, chosen, .{});
     }
-}
-
-/// Signs `name` in again without switching: `claude auth login` runs under a
-/// throwaway config directory, so the live login, Desktop and open sessions stay
-/// as they are, and the new login is saved as `name`'s once it is `name`'s account.
-pub fn cmdLogin(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
-    const h = try paths.home(gpa);
-    defer gpa.free(h);
-    const p_json = try paths.profileJsonIn(gpa, h, name);
-    defer gpa.free(p_json);
-    if (!desktop.pathExists(gpa, p_json)) {
-        display.print("❌  Profile '{s}' not found. Use: claudacity save {s}\n", .{ name, name });
-        return error.ProfileNotFound;
-    }
-    if (std.c.isatty(std.posix.STDIN_FILENO) != 1) {
-        display.print("❌  Signing in opens a browser, so it needs a terminal.\n", .{});
-        return error.NotATerminal;
-    }
-
-    const dir = try std.fmt.allocPrint(gpa, "/tmp/claudacity-login-{d}", .{std.c.getpid()});
-    defer gpa.free(dir);
-    std.Io.Dir.cwd().createDirPath(io, dir) catch |err| {
-        display.print("❌  Could not create {s}: {s}\n", .{ dir, @errorName(err) });
-        return err;
-    };
-    defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
-    var svc_buf: [64]u8 = undefined;
-    const temp_svc = oauth_login.configDirService(&svc_buf, dir);
-    defer keychain.delete(gpa, io, temp_svc) catch {};
-
-    const want = expectedAccount(gpa, h, name);
-    defer if (want) |w| gpa.free(w);
-    const as = want orelse "its account";
-
-    var tries: usize = 0;
-    while (tries < SIGN_IN_TRIES) : (tries += 1) {
-        display.print("🔑  Sign in as {s} in the private window that opens.\n", .{as});
-        if (!runLoginIn(gpa, io, want, dir)) {
-            display.print("❌  Sign-in did not finish.\n", .{});
-            return error.SignInFailed;
-        }
-        const login = keychain.get(gpa, io, temp_svc) catch {
-            display.print("❌  claude auth login finished but saved no login.\n", .{});
-            return error.SignInFailed;
-        };
-        defer gpa.free(login);
-        const token = (oauth_login.validAccessToken(gpa, login, oauth_login.nowMs()) catch null) orelse {
-            display.print("❌  The new login has no usable token.\n", .{});
-            return error.SignInFailed;
-        };
-        const got = oauth_login.accountEmail(gpa, io, token);
-        @memset(token, 0);
-        gpa.free(token);
-        defer if (got) |g| gpa.free(g);
-        if (want != null and (got == null or !accounts.same(got.?, want.?))) {
-            display.print("❌  Signed in as {s}, not {s}.\n", .{ got orelse "an unknown account", as });
-            keychain.delete(gpa, io, temp_svc) catch {};
-            continue;
-        }
-        if (want == null) if (got) |g| accounts.pin(gpa, h, name, g) catch {};
-
-        const svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KC_PROFILE_CODE, name });
-        defer gpa.free(svc);
-        const acct = keychain.getAccount(gpa, io, temp_svc);
-        defer gpa.free(acct);
-        try keychain.set(gpa, io, svc, acct, login);
-        // The active profile runs on the live login, which Claude Code reads.
-        const cur = try currentIn(gpa, h);
-        defer if (cur) |c_name| gpa.free(c_name);
-        if (cur) |c_name| if (std.mem.eql(u8, c_name, name)) try keychain.set(gpa, io, KEYCHAIN_CODE, acct, login);
-
-        const msg = try std.fmt.allocPrint(gpa, "Signed '{s}' in as {s} and saved it", .{ name, got orelse as });
-        defer gpa.free(msg);
-        display.ok(msg);
-        return;
-    }
-    display.print("❌  '{s}' keeps its old login.\n", .{name});
-    return error.SignInFailed;
 }
 
 pub fn cmdLogoutAll(gpa: std.mem.Allocator, io: std.Io) !void {
