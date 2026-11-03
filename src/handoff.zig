@@ -368,7 +368,7 @@ const Fake = struct {
         const f = self(ctx);
         f.log("usage");
         const rows = try gpa.alloc(usage.ProfileUsage, 2);
-        rows[0] = .{ .name = try gpa.dupe(u8, "primary"), .active = true, .state = if (f.active_pct) |p| .{ .usage = .{ .seven_day = .{ .pct = p, .resets_at = 100 } } } else .failed };
+        rows[0] = .{ .name = try gpa.dupe(u8, "primary"), .active = true, .state = if (f.active_pct) |p| .{ .usage = .{ .seven_day = .{ .pct = p, .resets_at = 100 } } } else .{ .failed = .{} } };
         rows[1] = .{ .name = try gpa.dupe(u8, "overflow1"), .active = false, .state = f.next_state };
         return rows;
     }

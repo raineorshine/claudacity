@@ -114,7 +114,7 @@ pub const Login = union(enum) {
     missing,
 };
 
-fn nowMs() i64 {
+pub fn nowMs() i64 {
     const c_time = @cImport(@cInclude("time.h"));
     return @as(i64, c_time.time(null)) * 1000;
 }
@@ -123,6 +123,17 @@ fn nowMs() i64 {
 /// the saved login has expired. `is_active` also refreshes the live Claude Code
 /// entry, so both stay on the same rotated refresh token.
 pub fn freshAccessToken(gpa: std.mem.Allocator, io: std.Io, profile_name: []const u8, is_active: bool) !Login {
+    return freshAccessTokenWith(gpa, io, profile_name, is_active, .{});
+}
+
+pub const FreshOptions = struct {
+    /// Set to the token endpoint's HTTP status when a refresh was attempted.
+    status: ?*u16 = null,
+    /// Refresh even when the stored access token is still valid.
+    force: bool = false,
+};
+
+pub fn freshAccessTokenWith(gpa: std.mem.Allocator, io: std.Io, profile_name: []const u8, is_active: bool, opts: FreshOptions) !Login {
     const profile_svc = try std.fmt.allocPrint(gpa, "{s}{s}", .{ KEYCHAIN_PROFILE_PREFIX, profile_name });
     defer gpa.free(profile_svc);
     const svc: []const u8 = if (is_active) KEYCHAIN_ACTIVE else profile_svc;
@@ -130,7 +141,7 @@ pub fn freshAccessToken(gpa: std.mem.Allocator, io: std.Io, profile_name: []cons
     const stored = keychain.get(gpa, io, svc) catch return .missing;
     defer gpa.free(stored);
     const now = nowMs();
-    if (try validAccessToken(gpa, stored, now)) |t| return .{ .token = t };
+    if (!opts.force) if (try validAccessToken(gpa, stored, now)) |t| return .{ .token = t };
 
     const rt = try refreshToken(gpa, stored);
     defer gpa.free(rt);
@@ -143,6 +154,7 @@ pub fn freshAccessToken(gpa: std.mem.Allocator, io: std.Io, profile_name: []cons
         .body = body,
     }) catch return error.RefreshFailed;
     defer resp.deinit(gpa);
+    if (opts.status) |st| st.* = resp.status;
 
     if (resp.status != 200) {
         if (isInvalidGrant(resp.body)) return .needs_sign_in;
@@ -160,6 +172,16 @@ pub fn freshAccessToken(gpa: std.mem.Allocator, io: std.Io, profile_name: []cons
         keychain.update(gpa, io, profile_svc, p_acct, updated) catch {};
     }
     return .{ .token = (try validAccessToken(gpa, updated, now)) orelse return error.RefreshFailed };
+}
+
+/// The Keychain entry Claude Code keeps its login in when run with
+/// `CLAUDE_CONFIG_DIR=config_dir`: the first 8 hex digits of the path's SHA-256
+/// after `Claude Code-credentials-`.
+pub fn configDirService(buf: []u8, config_dir: []const u8) []const u8 {
+    var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(config_dir, &digest, .{});
+    const hex = std.fmt.bytesToHex(digest, .lower);
+    return std.fmt.bufPrint(buf, "{s}-{s}", .{ KEYCHAIN_ACTIVE, hex[0..8] }) catch "";
 }
 
 pub const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
@@ -277,6 +299,11 @@ pub fn syncPlan(gpa: std.mem.Allocator, io: std.Io, profile_name: []const u8, ac
 const STORED =
     \\{"claudeAiOauth":{"accessToken":"old-at","refreshToken":"old-rt","expiresAt":1000,"scopes":["user:inference"],"subscriptionType":"max"}}
 ;
+
+test "configDirService hashes the config directory like Claude Code" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("Claude Code-credentials-c365e6d6", configDirService(&buf, "/tmp/claudacity-login-test"));
+}
 
 test "isExpired treats missing and near-expiry logins as expired" {
     try std.testing.expect(isExpired(null, 0));
