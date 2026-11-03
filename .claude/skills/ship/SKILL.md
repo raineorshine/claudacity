@@ -25,7 +25,7 @@ often on some other branch.
 zig build && zig build -Doptimize=ReleaseSmall && zig build test
 ```
 
-Judge `zig build test` by its exit code and `Build Summary`, not its output (AGENTS.md "Gates"). Fix
+Judge `zig build test` by its exit code, not its output (AGENTS.md "Gates"). Fix
 every failure and re-run until clean.
 
 ### 2. Commit all staged and unstaged changes
