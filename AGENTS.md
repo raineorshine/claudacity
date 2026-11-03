@@ -4,8 +4,8 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 
 ## Gates
 
-- `zig build`, `zig build -Doptimize=ReleaseSmall` and `zig build test` must pass. There is no CI, so the local run is the gate.
-- Judge a test run by its exit code and `Build Summary`. An existing Desktop test prints `❌  Cookies DB não encontrado` and a `failed command:` line on every passing run.
+- `zig build`, `zig build -Doptimize=ReleaseSmall` and `zig build test` must pass. There is no CI: the GitHub account has no Actions minutes, so nothing here may rely on Actions, and the local run is the gate.
+- Judge a test run by its exit code; `zig build test` prints `Build Summary` only on a failure or with `--summary all`. An existing Desktop test prints `❌  Cookies DB não encontrado` and a `failed command:` line on every passing run.
 - `claudacity handoff --dry-run` is the safe end-to-end smoke. It still refreshes expired saved logins, which writes the rotated login to the Keychain.
 - `zig-out/bin/claudacity usage` is the smoke for a change to what `usage` or `pick` prints. It reads every profile and refreshes expired logins the same way, and switches nothing.
 
@@ -14,6 +14,9 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) and rebuilds the installed `~/.local/bin/claudacity` from main, then archives the session. It runs only when the user asks, or invokes [`ship-at-end`](.claude/skills/ship-at-end/SKILL.md) to implement a change and ship it once it looks good. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
 
 A GitHub release, which `install.sh` and `claudacity update` download, is cut only when the user asks: `scripts/release.sh <version>` from a clean `origin/main` bumps the version, cross-compiles both Mac binaries against the SDK as `--sysroot`, pushes the release commit and tag, and publishes the binaries with `gh`. The ship skill runs it when the ship was asked to release.
+
+To test a change to `scripts/release.sh` without publishing, clone the repo bare into the scratchpad as `origin`, clone a work copy from it, and put a stub `gh` that records its arguments first on `PATH`.
+After a real release, curl the asset `install.sh` names and run its `--version`.
 
 ## Working rules
 
@@ -42,6 +45,8 @@ A GitHub release, which `install.sh` and `claudacity update` download, is cut on
 - Background work for the length of a step runs with `io.concurrent`, which returns a `std.Io.Future` and can fail where no concurrency is available, so keep an inline fallback. A loop in it that sleeps with `io.sleep` ends on `Future.cancel`, because the sleep returns `error.Canceled` (`display.Progress`).
 - Zig 0.16 moved most I/O into `std.Io`, so look up a signature in the installed std (`/opt/homebrew/Cellar/zig/0.16.0_1/lib/zig/std/Io.zig`) rather than from memory. `zig env` prints ZON (`.lib_dir = "…"`), not JSON.
 - Zig refuses a capture that shadows any outer name, file-scope consts included: `profile.zig`'s `const c = @cImport(...)` rules out `|c|` there.
+- A build with an explicit `-Dtarget`, even `aarch64-macos`, gets no macOS SDK paths and fails to find sqlite3. Pass `--sysroot "$(xcrun --show-sdk-path)"`, which `build.zig` turns into the SDK's include and library paths. Run the x86_64 binary with `arch -x86_64` to smoke it under Rosetta.
+- Under `--sysroot`, Zig resolves a library path inside the sysroot but takes an include path as is: `build.zig` adds `/usr/lib` and `<sdk>/usr/include`. `--search-prefix` with either form leaves one of them broken.
 - External effects in orchestration code go through an injected interface (`handoff.Effects`) so ordering is tested with fakes.
 
 ## Docs
