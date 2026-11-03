@@ -88,6 +88,12 @@ git reset --soft origin/main && git commit -m "subject" -m "body"
 
 Use a single message that describes the overall diff.
 
+**Squash only a tree the rebase finished.** `git reset --soft origin/main` keeps whatever the worktree
+holds and commits it as the diff from main, so on a branch cut before other work landed it ships that
+work's removal with no conflict to warn of. One ship did exactly that: it removed `cly login` and its
+docs, landed an hour earlier, inside an unrelated fix. Before committing, read
+`git diff --cached --stat origin/main` and expect only this branch's files.
+
 ### 5. Push to origin/main
 
 ```bash
