@@ -268,9 +268,7 @@ zig build -Doptimize=ReleaseFast   # max speed
 zig build test
 ```
 
-CI runs on every push: `zig build` (debug) and `zig build test`.
-
-Releases are built on a Mac, not in GitHub Actions. From a clean checkout of `origin/main`:
+There is no CI, so run the builds and tests above before pushing. Releases are built on a Mac, not in GitHub Actions. From a clean checkout of `origin/main`:
 
 ```bash
 scripts/release.sh 1.2.3
