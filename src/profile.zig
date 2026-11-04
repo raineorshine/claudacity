@@ -149,8 +149,9 @@ pub const UseResult = struct {
     }
 };
 
-/// Carries Desktop's preferences and MCP servers from `from`, already swapped
-/// out, into the live Desktop dir now holding `to`. A failure only warns.
+/// Carries Desktop's preferences, MCP servers and local environments from
+/// `from`, already swapped out, into the live Desktop dir now holding `to`.
+/// A failure only warns.
 fn carryDesktopSettings(gpa: std.mem.Allocator, io: std.Io, h: []const u8, from: []const u8, to: []const u8) void {
     if (std.mem.eql(u8, from, to)) return;
     const from_dir = paths.desktopProfileDirIn(gpa, h, from) catch return;
@@ -160,6 +161,23 @@ fn carryDesktopSettings(gpa: std.mem.Allocator, io: std.Io, h: []const u8, from:
     _ = desktop_settings.carryIn(gpa, io, from_dir, to_dir) catch |err| {
         display.print("⚠️  Could not carry Desktop settings from '{s}': {s}\n", .{ from, @errorName(err) });
     };
+    // Local environments are keyed by account; a profile not yet signed in has none.
+    const from_acct = profileAccountUuid(gpa, io, h, from) orelse return;
+    defer gpa.free(from_acct);
+    const to_acct = profileAccountUuid(gpa, io, h, to) orelse return;
+    defer gpa.free(to_acct);
+    _ = desktop_settings.carryPresetsIn(gpa, io, from_dir, from_acct, to_dir, to_acct) catch |err| {
+        display.print("⚠️  Could not carry local environments from '{s}': {s}\n", .{ from, @errorName(err) });
+    };
+}
+
+fn profileAccountUuid(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) ?[]u8 {
+    const p_json = paths.profileJsonIn(gpa, h, name) catch return null;
+    defer gpa.free(p_json);
+    const rel = sessions.accountRel(gpa, io, p_json) catch return null;
+    defer gpa.free(rel);
+    const end = std.mem.indexOfScalar(u8, rel, '/') orelse rel.len;
+    return gpa.dupe(u8, rel[0..end]) catch null;
 }
 
 /// Carries open local sessions from the active profile `from` into `to`.

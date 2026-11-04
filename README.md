@@ -96,8 +96,9 @@ belongs to an organization whose work should not cross into another.
 ### Desktop settings follow you
 
 Each switch carries Claude Desktop's app settings (Remote Control, keep-awake,
-sidebar and the rest of its preferences) and its MCP server list from the
-profile you leave into the one you switch to, so the last change wins in every
+sidebar and the rest of its preferences), its MCP server list and its local
+environments (the saved folders and model settings in the composer's environment
+picker) from the profile you leave into the one you switch to, so the last change wins in every
 profile. Sign-ins, the Remote Control connection and settings Desktop takes
 from an account's organization stay with each profile.
 

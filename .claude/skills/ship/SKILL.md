@@ -68,7 +68,7 @@ it landed. The script squashes only when `origin/main` is an ancestor of `HEAD`.
 | ---- | ----- | -- |
 | 0 | Shipped and installed | Go on to step 4 |
 | 1 | Not shipped (gates failed, nothing to ship, three refused pushes) | Fix what it printed and rerun |
-| 2 | The rebase stopped on conflicts | Resolve them (below) and `git rebase --continue`, repeating while it stops again (each branch commit, the script's own `ship: work in progress` among them, can conflict), then rerun |
+| 2 | The rebase stopped on conflicts | Resolve them (below), `git rebase --continue`, rerun |
 | 3 | Shipped; the install build failed, the installed claudacity is unchanged | One line in the report |
 
 **Resolving a conflict, prefer the branch's changes, not its copy of whole files.** A worktree cut
