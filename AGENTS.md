@@ -9,6 +9,7 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 - Run each gate as its own background command and read its output file: compiling `zig build test` alone takes about a minute, so a chain of gates outlasts the Bash tool's foreground timeout.
 - `claudacity handoff --dry-run` is the safe end-to-end smoke. It still refreshes expired saved logins, which writes the rotated login to the Keychain.
 - `zig-out/bin/claudacity usage` is the smoke for a change to what `usage` or `pick` prints. It reads every profile and refreshes expired logins the same way, and switches nothing.
+- `zig-out/bin/claudacity share <source> <target>` is the smoke for the share syncs, against real profiles without switching. To see MCP mirroring, add a throwaway user server (`command: true`) to the source, share, compare `jq .mcpServers` across `~/.claude.<p>.json`, and remove it from every profile afterwards, inactive ones through a `CLAUDE_CONFIG_DIR` link (`docs/claude-internals.md`, User-scoped MCP servers). It also updates any real plugin that lags the source.
 
 ## Shipping
 
@@ -30,6 +31,7 @@ After a real release, curl the asset `install.sh` names and run its `--version`.
 - Before switching or handing off, check that each profile holds its own account (`claudacity whoami`, `claudacity usage`). A `claude auth login` run under the wrong profile gets saved over that profile's login by the next switch; repair it first (`docs/claude-internals.md`, Logins).
 - The outgoing profile's live login is saved in `profile.saveAs` with `.auto`, before `useWith` installs the incoming one; work on the outgoing login at switch time (`renewSaved`) hooks in there.
 - Work that runs on every switch goes in `profile.useWith`, which both `use` and `handoff` call; it runs after Desktop's data has swapped and before Desktop relaunches. `claudacity marketplaces sync` exercises the post-switch marketplace sync on the active profile without switching.
+- What `share` mirrors (skills, plugins, MCP servers) syncs in both `profile.cmdShare` and, before the switch, in `profile.useWith` for a profile that shares from another. A failed plugin sync refuses the switch; a failed MCP sync only warns, since a missing server costs one tool and a refused switch costs the account.
 - Desktop data that should follow every profile (preferences, MCP servers, local environments) is carried in `src/desktop_settings.zig`, called from `profile.carryDesktopSettings` after the swap; a newly carried item is listed in README's "Desktop settings follow you" and in `docs/claude-internals.md`'s Desktop settings bullet.
 - A switch step that can run for seconds shows a live line through `display.Progress` (`src/display.zig`): spinner, step, `done/total` from `tick()`, elapsed seconds; a single line off a terminal. The slow ones today are the open-session carry, which waits up to 30s for Desktop's session processes, and the claude.ai marketplace sync, which polls each marketplace. Nothing else may print between its `start` and `stop`.
 - To see what a terminal line draws without a real switch, copy `src/display.zig` beside a small `main.zig` in a temp directory, `zig build-exe main.zig -lc`, and run the binary under Python's `pty.fork` for the escape sequences and once through `| cat` for the off-terminal output.
@@ -39,7 +41,7 @@ After a real release, curl the asset `install.sh` names and run its `--version`.
 - One tool refreshes a given saved login. A second one (for example `claude-swap`) rotates the refresh token out from under claudacity and forces a fresh sign-in.
 - `claudacity usage` colors only a terminal (`isatty`, `NO_COLOR` off). Output from the Bash tool or the chat's `!` prefix is captured, so it shows no colors; check colors in the app's Terminal panel. `read_terminal` strips them too, so only the user can confirm them. `sk` and `fzf` show colors only with `--ansi`.
 - `security` reads the login Keychain under `$HOME`, so a script tested with a fake `HOME` finds no Keychain items at all. Point only its file paths at the temp directory (a root variable) and use throwaway service names in the real Keychain.
-- Secrets never go in process arguments: requests go through `exec.run` with the request on stdin (`src/http.zig`). `std.process.run` always ignores stdin in Zig 0.16, so piping needs `std.process.spawn` with `.stdin = .pipe` (`src/exec.zig`).
+- Secrets never go in process arguments: requests go through `exec.run` with the request on stdin (`src/http.zig`). `std.process.run` always ignores stdin in Zig 0.16, so piping needs `std.process.spawn` with `.stdin = .pipe` (`src/exec.zig`). The one exception is `claude mcp add-json`, which takes a server's entry only as an argument, so a secret in its `env` or `headers` shows in `ps` while `src/mcp.zig` syncs it.
 
 ## Zig tests
 

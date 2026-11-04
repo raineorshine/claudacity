@@ -59,6 +59,9 @@ rebased tree, squashes to one commit with the message, and pushes it to `origin/
 again, up to three times. Then it moves the local main wherever it is checked out, and rebuilds the
 installed `~/.local/bin/claudacity` (and its `cly` symlink) from `origin/main` in a throwaway checkout.
 
+Run it with `run_in_background` and wait for its notification: the gates plus a ReleaseSmall build in
+a fresh checkout, whose zig cache starts cold, have outlasted the Bash tool's 600s foreground limit.
+
 **Never squash or push by hand.** `git reset --soft origin/main` keeps the worktree's files as they
 are, so on a tree the rebase did not finish it ships the removal of everything that landed since, as
 an ordinary commit no push refuses. That is how a ship once took `cly login` out of main an hour after
