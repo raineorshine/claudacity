@@ -11,11 +11,11 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 
 ## Shipping
 
-The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) and rebuilds the installed `~/.local/bin/claudacity` from main, then archives the session. It runs only when the user asks, or invokes [`ship-at-end`](.claude/skills/ship-at-end/SKILL.md) to implement a change and ship it once it looks good. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
+The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main` (squashed, no PR) through `scripts/ship.sh`, which rebuilds the installed `~/.local/bin/claudacity` from main, then archives the session. Never squash or push to main by hand: the script squashes only a tree its rebase finished, which a hand-run `git reset --soft origin/main` does not check. The skill runs only when the user asks, or invokes [`ship-at-end`](.claude/skills/ship-at-end/SKILL.md) to implement a change and ship it once it looks good. `📦 ` means the three gates pass on the branch; `🚀 ` means the push landed.
 
 A GitHub release, which `install.sh` and `claudacity update` download, is cut only when the user asks: `scripts/release.sh <version>` from a clean `origin/main` bumps the version, cross-compiles both Mac binaries against the SDK as `--sysroot`, pushes the release commit and tag, and publishes the binaries with `gh`. The ship skill runs it when the ship was asked to release.
 
-To test a change to `scripts/release.sh` without publishing, clone the repo bare into the scratchpad as `origin`, clone a work copy from it, and put a stub `gh` that records its arguments first on `PATH`.
+To test a change to `scripts/ship.sh`, give it a bare clone as `origin`, a stub `zig` first on `PATH` that writes `zig-out/bin/claudacity`, and `CLAUDACITY_BIN_DIR` pointing into the scratchpad so the install lands there; a `pre-receive` hook in the bare clone that fails once exercises a refused push. To test a change to `scripts/release.sh` without publishing, clone the repo bare into the scratchpad as `origin`, clone a work copy from it, and put a stub `gh` that records its arguments first on `PATH`.
 After a real release, curl the asset `install.sh` names and run its `--version`.
 
 ## Working rules

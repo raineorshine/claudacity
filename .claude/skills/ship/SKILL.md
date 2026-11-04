@@ -1,6 +1,6 @@
 ---
 name: ship
-description: "Finish a change in the claudacity repo: run the gates, commit, rebase on origin/main, squash, push to origin/main, move the local main, rebuild the installed claudacity from main, extract the session's learnings, and archive the session. Use only when the user explicitly asks for the change to be shipped, landed, or pushed to main — never because a change looks finished."
+description: "Finish a change in the claudacity repo: run the gates, then land it with scripts/ship.sh (rebase on origin/main, squash, push, move the local main, rebuild the installed claudacity from main), extract the session's learnings, and archive the session. Use only when the user explicitly asks for the change to be shipped, landed, or pushed to main — never because a change looks finished."
 ---
 
 # Ship (finish a change → land it on origin/main → install it)
@@ -28,7 +28,7 @@ zig build && zig build -Doptimize=ReleaseSmall && zig build test
 Judge `zig build test` by its exit code, not its output (AGENTS.md "Gates"). Fix
 every failure and re-run until clean.
 
-### 2. Commit all staged and unstaged changes
+### 2. Bring the writing level and write the message
 
 Bring the writing level with the change first, so it lands in this ship rather than a follow-up:
 
@@ -45,115 +45,58 @@ with a lower-case subject under about 60 characters, and a body that says why ra
 body also says, in a line of its own, whether the change never ran against real profiles — a thing
 nothing else will record, since the gates run only on temp directories.
 
-### 3. Rebase on origin/main
+### 3. Land it with `scripts/ship.sh`
+
+Write the message to a file in the scratchpad and run:
 
 ```bash
-git fetch origin && git rebase origin/main
+scripts/ship.sh <message-file>                      # add --release <version> only when asked
 ```
 
-Resolve conflicts, preferring the branch's changes unless clearly wrong, then `git add` and
-`git rebase --continue`, repeating until it completes.
+The script commits anything uncommitted, fetches, rebases on `origin/main`, runs the gates on the
+rebased tree, squashes to one commit with the message, and pushes it to `origin/main`
+(`raineorshine/claudacity`; never `fork` or `upstream`). A refused push makes it fetch and rebase
+again, up to three times. Then it moves the local main wherever it is checked out, and rebuilds the
+installed `~/.local/bin/claudacity` (and its `cly` symlink) from `origin/main` in a throwaway checkout.
 
-**Prefer the branch's changes, not its copy of whole files.** A worktree cut before something landed
-holds the old copy of every file that change touched. Before resolving a conflict in a file this
-branch did not set out to change, list what landed in it:
+**Never squash or push by hand.** `git reset --soft origin/main` keeps the worktree's files as they
+are, so on a tree the rebase did not finish it ships the removal of everything that landed since, as
+an ordinary commit no push refuses. That is how a ship once took `cly login` out of main an hour after
+it landed. The script squashes only when `origin/main` is an ancestor of `HEAD`.
+
+| Exit | Means | Do |
+| ---- | ----- | -- |
+| 0 | Shipped and installed | Go on to step 4 |
+| 1 | Not shipped (gates failed, nothing to ship, three refused pushes) | Fix what it printed and rerun |
+| 2 | The rebase stopped on conflicts | Resolve them (below), `git rebase --continue`, rerun |
+| 3 | Shipped; the install build failed, the installed claudacity is unchanged | One line in the report |
+
+**Resolving a conflict, prefer the branch's changes, not its copy of whole files.** A worktree cut
+before something landed holds the old copy of every file that change touched. Before resolving a
+conflict in a file this branch did not set out to change, list what landed in it, and keep it:
 
 ```bash
 git log --oneline $(git merge-base HEAD origin/main)..origin/main -- <file>
 ```
 
-Anything listed there that your side does not contain is about to be undone.
+**Read what landed in `AGENTS.md`, `docs/` and `README.md` before running the script.** Another
+session can have written a claim this branch makes untrue, and a clean rebase flags none of it:
+`git fetch origin && git diff HEAD...origin/main -- AGENTS.md docs/ README.md`. Correct what the change
+falsifies first, so it lands in this ship.
 
-**Read what the rebase brought into `AGENTS.md` and `docs/` against the change.** Another session can
-have written a claim this branch makes untrue — the first ship of this skill landed beside a new line
-saying the installed claudacity was the upstream release, which step 7 was about to falsify. A clean rebase
-flags none of it:
+**A release** (`--release <version>`, only when the user asked: "ship and release", "cut 1.1.0") runs
+`scripts/release.sh` after the push and before the rebuild, so the installed build has the bumped
+version. Take the version the user named; otherwise bump by the commits since the last `v*` tag —
+major for a `!`, minor for a `feat:`, patch for the rest.
 
-```bash
-git diff $(git merge-base ORIG_HEAD origin/main) origin/main -- AGENTS.md docs/ README.md
-```
+**The install build failing on a full disk** (`No space left on device`): this checkout's own
+`zig-out/bin/claudacity` is the ReleaseSmall build of the shipped tree when `git diff --quiet HEAD
+origin/main` holds; copy it to `~/.local/bin/claudacity.new`, `mv -f` it over
+`~/.local/bin/claudacity`, and `ln -sf claudacity ~/.local/bin/cly`.
 
-Correct it before the squash, so it lands in this ship.
+### 4. Put `🚀 ` on the title
 
-Re-run step 1 after any rebase that brought code in: the gates passed on a different tree.
-
-Already on `main`: skip the rebase and step 4, but not the fetch — `git pull --ff-only`, commit, and go
-straight to step 5.
-
-### 4. Squash all commits into one
-
-```bash
-git reset --soft origin/main && git commit -m "subject" -m "body"
-```
-
-Use a single message that describes the overall diff.
-
-**Squash only a tree the rebase finished.** `git reset --soft origin/main` keeps whatever the worktree
-holds and commits it as the diff from main, so on a branch cut before other work landed it ships that
-work's removal with no conflict to warn of. One ship did exactly that: it removed `cly login` and its
-docs, landed an hour earlier, inside an unrelated fix. Before committing, read
-`git diff --cached --stat origin/main` and expect only this branch's files.
-
-### 5. Push to origin/main
-
-```bash
-git push origin HEAD:main
-```
-
-This is the ship. `origin` is `raineorshine/claudacity`; never push to `fork` (`raineorshine/claude-switch`) or `upstream`.
-
-**If the push is rejected as non-fast-forward,** someone else landed first and nothing was lost: go
-back to step 3, redo step 4 onto the new base, and push again.
-
-### 5a. Cut a release, only when asked
-
-When the user asked for a release with the ship ("ship and release", "cut 1.1.0"), publish it now,
-before step 6 moves the local main and step 7 rebuilds, so both pick up the bumped version:
-
-```bash
-scripts/release.sh <version>
-```
-
-Take the version the user named; otherwise bump by the commits since the last `v*` tag — major for a
-`!`, minor for a `feat:`, patch for the rest. HEAD must equal `origin/main`, which it does right after
-step 5. The script pushes its own release commit and tag. If it fails before its push, `git checkout --
-build.zig.zon src/main.zig CHANGELOG.md` and report it; the ship itself has already landed.
-
-### 6. Move the local main
-
-```bash
-git fetch origin main && MAIN=$(git worktree list --porcelain | awk '/^worktree /{w=substr($0,10)} $0=="branch refs/heads/main"{print w}') && if [ -z "$MAIN" ]; then git fetch origin main:main; elif [ -n "$(git -C "$MAIN" status --porcelain --untracked-files=no)" ]; then echo "local main left behind: $MAIN has local changes"; else git -C "$MAIN" merge --ff-only origin/main; fi
-```
-
-It fast-forwards `main` in place wherever it is checked out, and moves the ref alone when `main` is
-checked out nowhere, since `git fetch origin main:main` refuses to move a checked-out branch. When it
-reports local changes, or the fast-forward refuses, leave them — never `checkout --` someone's work away.
-
-### 7. Rebuild the installed claudacity from main
-
-The installed `~/.local/bin/claudacity` is a copy of a local build, not a release download, and the nightly
-`claudacity schedule` job runs it. Build it from `origin/main` in a throwaway checkout — never from this
-branch or the main checkout, whose trees can hold work that has not shipped:
-
-```bash
-BUILD=$(mktemp -d)/claudacity-main && git worktree add --detach "$BUILD" origin/main && (cd "$BUILD" && zig build -Doptimize=ReleaseSmall) && cp "$BUILD/zig-out/bin/claudacity" ~/.local/bin/claudacity.new && mv -f ~/.local/bin/claudacity.new ~/.local/bin/claudacity && ln -sf claudacity ~/.local/bin/cly && git worktree remove --force "$BUILD" && claudacity --version
-```
-
-`cly` is a relative symlink to it, so it follows each rebuild. Copy then `mv`, never `cp` over the installed file: the rename leaves a running handoff on the old
-inode, and overwriting a signed binary in place gets the next run killed by the kernel. Installing
-runs nothing against the user's profiles.
-
-**If the build fails,** the ship has still happened and the installed claudacity is unchanged: one line in the
-report, and remove the throwaway worktree with `git worktree remove --force "$BUILD"`.
-
-The chain skips the `git worktree remove` when the build fails, so remove `$BUILD` by hand. When the
-failure is the disk filling up (`No space left on device`) and `git diff --quiet HEAD origin/main`
-holds, this checkout's own `zig-out/bin/claudacity` is the ReleaseSmall build of the same tree from
-step 1: install that one with the same copy, `mv` and `ln` instead.
-
-### 8. Put `🚀 ` on the title
-
-The push in step 5 is what counts as shipped, whatever step 7 managed, so the prefix goes on here and
+The push in step 3 is what counts as shipped, whatever the install managed, so the prefix goes on here and
 not at the start. Until then the title keeps what was already true — usually `📦 `. Say nothing about
 it in the response.
 
@@ -161,9 +104,9 @@ Read the title with `mcp__ccd_session_mgmt__get_session` (`"self"`) and set it w
 `mcp__ccd_session_mgmt__set_session_title`, replacing the existing prefix rather than stacking. In a
 cloud session, where those do not exist, `mcp__claude-code-remote__get_session` with no `session_id`
 describes this session (`ccr.id`, `ccr.title`), and `mcp__claude-code-remote__set_session_title`
-takes that id. Skip only when neither tool exists. Step 9's `🚀 ` goes back the same way.
+takes that id. Skip only when neither tool exists. Step 5's `🚀 ` goes back the same way.
 
-### 9. Extract the learnings
+### 5. Extract the learnings
 
 Invoke the `learn` skill. Whatever the session learned about claudacity, Claude's internals or the workflow
 is still in context now and in nobody's an hour later, so this is the last stage of shipping and needs
@@ -172,12 +115,12 @@ no ask. Skip it when the ship was itself the last step of `learn` or `learn-orga
 `learn` puts `📚 ` on the title; put `🚀 ` back when it finishes. If it finds nothing worth recording,
 say so in one line.
 
-### 10. Print the completion message
+### 6. Print the completion message
 
 Print `🚀 Shipped` as the last line of the response, after the learn report. Write it before step
-11's call, in the same response: nothing after the archive reaches the user.
+7's call, in the same response: nothing after the archive reaches the user.
 
-### 11. Archive the session
+### 7. Archive the session
 
 Last of all, after `learn` has landed its commit and `🚀 ` is back on the title, archive this
 session: `mcp__ccd_session_mgmt__archive_session` with `"self"`, or in a cloud session
@@ -185,7 +128,7 @@ session: `mcp__ccd_session_mgmt__archive_session` with `"self"`, or in a cloud s
 the final tool call of the ship. Asking to ship is the agreement to archive; do not ask again.
 
 Skip it when the ship was the last step of `learn` or `learn-organize` invoked on their own: the
-session goes on after that ship. A ship that fell over short of the push in step 5 is still work in
+session goes on after that ship. A ship that fell over short of the push in step 3 is still work in
 progress and keeps its session.
 
 **The archive refuses while anything of this session is still pending** — a background task, an armed
