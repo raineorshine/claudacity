@@ -64,9 +64,13 @@ are, so on a tree the rebase did not finish it ships the removal of everything t
 an ordinary commit no push refuses. That is how a ship once took `cly login` out of main an hour after
 it landed. The script squashes only when `origin/main` is an ancestor of `HEAD`.
 
+Worktrees share the `origin/main` ref, so another session's fetch moves it while the gates run;
+the script reads it once into `BASE` and squashes onto that. Any step that reads `origin/main` twice
+has the same hole.
+
 | Exit | Means | Do |
 | ---- | ----- | -- |
-| 0 | Shipped and installed | Go on to step 4 |
+| 0 | Shipped and installed | Check `git show --stat HEAD` lists only this branch's files, then go on to step 4 |
 | 1 | Not shipped (gates failed, nothing to ship, three refused pushes) | Fix what it printed and rerun |
 | 2 | The rebase stopped on conflicts | Resolve them (below) and `git rebase --continue`, repeating while it stops again (each branch commit, the script's own `ship: work in progress` among them, can conflict), then rerun |
 | 3 | Shipped; the install build failed, the installed claudacity is unchanged | One line in the report |
