@@ -16,6 +16,7 @@ The [`ship`](.claude/skills/ship/SKILL.md) skill lands a branch on `origin/main`
 A GitHub release, which `install.sh` and `claudacity update` download, is cut only when the user asks: `scripts/release.sh <version>` from a clean `origin/main` bumps the version, cross-compiles both Mac binaries against the SDK as `--sysroot`, pushes the release commit and tag, and publishes the binaries with `gh`. The ship skill runs it when the ship was asked to release.
 
 To test a change to `scripts/ship.sh`, give it a bare clone as `origin`, a stub `zig` first on `PATH` that writes `zig-out/bin/claudacity`, and `CLAUDACITY_BIN_DIR` pointing into the scratchpad so the install lands there; a `pre-receive` hook in the bare clone that fails once exercises a refused push. To test a change to `scripts/release.sh` without publishing, clone the repo bare into the scratchpad as `origin`, clone a work copy from it, and put a stub `gh` that records its arguments first on `PATH`.
+A `ship.sh` fixture needs `zig-out/` in its `.gitignore`, as the repo has: otherwise the script's commit of leftover work picks up the stub's binary, the next gates run rewrites it, and the retry's rebase stops on unstaged changes.
 After a real release, curl the asset `install.sh` names and run its `--version`.
 
 ## Working rules

@@ -41,18 +41,21 @@ gates() {
 shipped=""
 for try in $(seq 1 "$TRIES"); do
   git fetch -q origin main
-  if ! git rebase -q origin/main; then
+  # Pinned: another worktree's fetch moves the shared origin/main ref while the gates run,
+  # and a squash onto that newer main would ship the removal of whatever it brought.
+  BASE=$(git rev-parse origin/main)
+  if ! git rebase -q "$BASE"; then
     echo "⚠️  Rebase stopped (conflicts above). Resolve them, git rebase --continue, and rerun scripts/ship.sh." >&2
     exit 2
   fi
-  [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ] || die "nothing to ship: HEAD is origin/main"
+  [ "$(git rev-parse HEAD)" != "$BASE" ] || die "nothing to ship: HEAD is origin/main"
   # The guard this script exists for: squash only onto the main the rebase finished on.
-  git merge-base --is-ancestor origin/main HEAD || die "HEAD does not contain origin/main; the rebase did not finish"
+  git merge-base --is-ancestor "$BASE" HEAD || die "HEAD does not contain origin/main; the rebase did not finish"
   gates
-  git reset -q --soft origin/main
+  git reset -q --soft "$BASE"
   git commit -q -F "$MSG"
   echo "➜   Shipping: $(git log -1 --format=%s)"
-  git diff --stat origin/main HEAD | tail -n 1
+  git diff --stat "$BASE" HEAD | tail -n 1
   if git push -q origin HEAD:main; then
     shipped=$(git rev-parse --short HEAD)
     break
