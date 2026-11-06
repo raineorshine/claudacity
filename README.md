@@ -59,20 +59,12 @@ This saves the session tokens into macOS Keychain and migrates `~/.claude.json` 
 
 **2. Create a slot for the second account and log in**
 
-Sign out of claude.ai in your browser first, or open the sign-in URL that `claude auth login` prints in a private window. `claude auth login` authorizes whichever account the browser is already signed in to, even with `--email`, so a browser still signed in to the first account saves that account a second time under the new name.
-
 ```bash
-claudacity new personal   # creates ~/.claude.personal.json + ~/.claude.personal/, activates symlinks
-claude auth login --email you@personal.com  # logs in as the personal account into the active slot
+claudacity new personal     # creates ~/.claude.personal.json + ~/.claude.personal/, activates symlinks
+claudacity login personal   # signs Claude Code in as the personal account and saves it
 ```
 
-Check the result before saving: `claude auth status` must show the new account's email.
-
-**3. Save the second account**
-
-```bash
-claudacity save personal
-```
+`claudacity login` opens no browser. It prints a sign-in link: open it in a browser profile signed in to the new account (or a private window), then paste back the code it shows. A browser signed in to the first account would authorize that account a second time under the new name.
 
 You're set. Switch between accounts instantly:
 
@@ -177,7 +169,7 @@ claudacity save <name>    Save current sessions (Code + Desktop) as a named prof
 claudacity use <name>     Switch to a saved profile, moving open local Code sessions with you
 claudacity use <name> --no-carry-sessions  Switch and leave open sessions on the old profile
 claudacity login <name>   Sign a profile in again without switching to it
-claudacity new <name>     Create a new empty profile slot (then: claude auth login)
+claudacity new <name>     Create a new empty profile slot (then: claudacity login <name>)
 claudacity share <source> <target>  Share local skills, user plugins and MCP servers on each switch
 claudacity unshare <target>        Stop sharing and remove shared skill links
 claudacity delete <name>  Delete a profile and its data
@@ -217,7 +209,7 @@ The scheduled run only acts between 22:00 and 06:00. If the Mac is asleep at 22:
 
 `claudacity usage` marks the active profile with `>` and colors each percentage by how full it is: green under 50%, yellow under 75%, orange under 90%, and red from 90%, where handoff treats a profile as full. Colors appear only in a terminal, and never when `NO_COLOR` is set. `claudacity pick` shows a header row over each profile's email, its 5-hour and weekly percentages colored the same way, and the weekly reset. The 5-hour reset reads as time left, like `in 3h 12m`; the weekly reset reads like `Thu Oct 8 @ 1pm EDT`, in the local time zone.
 
-Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. An account on the free plan shows as `free plan` and is never handed off to; its login is still renewed nightly, so renewing the subscription needs no new sign-in. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it opens the sign-in in a private Brave window, so whichever account claude.ai, Claude Desktop or Claude Code is signed in to elsewhere does not matter, checks the account it gets is the profile's, offering the window again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity login <name>`. `claudacity login <name>` signs a profile in the same way without switching to it, leaving Claude Desktop, open sessions and the active profile as they are. A switch also renews the login of the profile it leaves, so a `claude` session still running as that account cannot make the saved login stale.
+Reading another profile's usage needs its saved login. claudacity refreshes expired logins and saves the renewed one in place, along with the account's current plan, so an upgrade shows in `claudacity whoami` after the next `claudacity usage`; if a login can no longer be renewed, `claudacity usage` says the profile needs signing in again. An account on the free plan shows as `free plan` and is never handed off to; its login is still renewed nightly, so renewing the subscription needs no new sign-in. A saved login lapses about a week after it was last renewed, so a profile left unused that long needs signing in again; `claudacity schedule install logins` renews every saved login nightly at 22:00 so none lapses, and `claudacity use` renews the one it switches to. When the profile's saved login has lapsed, is missing, or belongs to another account, `claudacity use` signs the profile in again itself: it prints a sign-in link to open in the browser profile signed in to that account and takes back the code it shows, opening no browser itself, checks the account it gets is the profile's, offering the link again when it is not, and saves it. Run unattended, it warns and leaves Claude Code signed out until the next `claudacity login <name>`. `claudacity login <name>` signs a profile in the same way without switching to it, leaving Claude Desktop, open sessions and the active profile as they are. A switch also renews the login of the profile it leaves, so a `claude` session still running as that account cannot make the saved login stale.
 
 Each profile's account is recorded in `~/Library/Application Support/claudacity/accounts.json`, first from the email `claudacity whoami` shows for it. A switch never saves a Claude Code login for another account over the profile you are leaving, and never hands one profile's login to another. `claudacity save <name>` records whatever account is signed in as the profile's, which is how to change it.
 

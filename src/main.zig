@@ -191,11 +191,6 @@ fn run(gpa: std.mem.Allocator, io: std.Io, args: []const []const u8) !void {
         cmdCheckUpdateBg(gpa, io);
         return;
     }
-    // `claude auth login`'s BROWSER during a re-sign-in (profile.signInAgain)
-    if (std.mem.startsWith(u8, cmd, "https://")) {
-        profile.openPrivate(io, cmd);
-        return;
-    }
 
     const skip_check = std.mem.eql(u8, cmd, "update") or
         std.mem.eql(u8, cmd, "--version") or
@@ -399,7 +394,7 @@ fn cmdDoctor(gpa: std.mem.Allocator, io: std.Io) !void {
         gpa.free(v);
         doctorOk("Claude Code-credentials", "found");
     } else |_| {
-        doctorWarn("Claude Code-credentials", "missing — run: claude auth login");
+        doctorWarn("Claude Code-credentials", "missing — run: claudacity login <profile>");
     }
 
     // ── Filesystem ───────────────────────────────────────────────────────────

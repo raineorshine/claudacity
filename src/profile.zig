@@ -225,7 +225,7 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     defer gpa.free(p_json);
 
     if (!desktop.pathExists(gpa, p_json)) {
-        display.print("❌  Profile '{s}' not found. Use: claudacity save {s}\n", .{ name, name });
+        display.print("❌  Profile '{s}' not found. Create it first: claudacity new {s}\n", .{ name, name });
         return error.ProfileNotFound;
     }
 
@@ -374,7 +374,7 @@ fn checkSaved(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u
 const SIGN_IN_TRIES = 3;
 
 /// Signs the now-active profile `name` in as its own account, then saves it, so
-/// the switch leaves Claude Code working. Needs a terminal for the browser
+/// the switch leaves Claude Code working. Needs a terminal for the
 /// sign-in; an unattended switch only warns, leaving Claude Code signed out.
 fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8, why: SignInReason) void {
     defer if (why == .other_account) gpa.free(why.other_account);
@@ -400,7 +400,7 @@ fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const 
 
     var tries: usize = 0;
     while (tries < SIGN_IN_TRIES) : (tries += 1) {
-        display.print("🔑  Sign in as {s} in the private window that opens.\n", .{as});
+        signInPrompt(name, want);
         if (!runLogin(gpa, io, want)) {
             display.print("❌  Sign-in did not finish.\n", .{});
             break;
@@ -425,9 +425,17 @@ fn signInAgain(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const 
     display.print("⚠️  Claude Code is left signed out under '{s}'. Sign in again with: claudacity login {s}\n", .{ name, name });
 }
 
-/// Runs `claude auth login` with claudacity as its browser, which opens the
-/// sign-in in a private window: `--email` only pre-fills the form, and a normal
-/// window authorizes whichever claude.ai account it is signed in to.
+fn signInPrompt(name: []const u8, want: ?[]const u8) void {
+    if (want) |w|
+        display.print("🔑  Open the link below in a browser signed in to claude.ai as {s}, and paste back the code it shows.\n", .{w})
+    else
+        display.print("🔑  Open the link below in a browser signed in to the claude.ai account for '{s}', and paste back the code it shows.\n", .{name});
+}
+
+/// Runs `claude auth login` with a browser that opens nothing, so the sign-in is
+/// only the link it prints, for the reader to open in a browser profile already
+/// signed in to the account: claudacity cannot tell which account a browser is
+/// signed in to, and `--email` only pre-fills the form.
 fn runLogin(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8) bool {
     return runLoginIn(gpa, io, want, null);
 }
@@ -435,18 +443,11 @@ fn runLogin(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8) bool {
 /// `runLogin` with `CLAUDE_CONFIG_DIR=config_dir`, whose login Claude Code keeps
 /// in its own Keychain entry (`oauth.configDirService`), apart from the live one.
 fn runLoginIn(gpa: std.mem.Allocator, io: std.Io, want: ?[]const u8, config_dir: ?[]const u8) bool {
-    var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var size: u32 = @intCast(exe_buf.len);
-    const browser = if (std.c._NSGetExecutablePath(&exe_buf, &size) == 0)
-        std.fmt.allocPrint(gpa, "BROWSER={s}", .{std.mem.sliceTo(&exe_buf, 0)}) catch return false
-    else
-        gpa.dupe(u8, "BROWSER=open") catch return false;
-    defer gpa.free(browser);
     const config_env = if (config_dir) |d| std.fmt.allocPrint(gpa, "CLAUDE_CONFIG_DIR={s}", .{d}) catch return false else null;
     defer if (config_env) |e| gpa.free(e);
     var argv_buf: [8][]const u8 = undefined;
     var argv_len: usize = 0;
-    for ([_]?[]const u8{ "/usr/bin/env", browser, config_env, "claude", "auth", "login" }) |a| if (a) |arg| {
+    for ([_]?[]const u8{ "/usr/bin/env", "BROWSER=/usr/bin/true", config_env, "claude", "auth", "login" }) |a| if (a) |arg| {
         argv_buf[argv_len] = arg;
         argv_len += 1;
     };
@@ -494,33 +495,6 @@ fn writeFileAll(gpa: std.mem.Allocator, path: []const u8, data: []const u8) !voi
     if (fd < 0) return error.OpenFailed;
     defer _ = std.c.close(fd);
     if (std.c.write(fd, data.ptr, data.len) != data.len) return error.WriteFailed;
-}
-
-/// Opens `url` in a private browser window, which shares no sign-in with the
-/// reader's own windows. claudacity runs as `claude auth login`'s `BROWSER`.
-pub fn openPrivate(io: std.Io, url: []const u8) void {
-    // `open -na <app> --args --incognito` hands the URL to the running browser,
-    // which drops the flag, so the window is asked for by script. The terms are
-    // Brave's; without Brave the URL opens in the default browser.
-    const script =
-        \\on run argv
-        \\tell application "Brave Browser"
-        \\set w to make new window with properties {mode:"incognito"}
-        \\set URL of active tab of w to item 1 of argv
-        \\activate
-        \\end tell
-        \\end run
-    ;
-    if (std.Io.Dir.accessAbsolute(io, "/Applications/Brave Browser.app", .{})) |_| {
-        if (std.process.spawn(io, .{ .argv = &.{ "osascript", "-e", script, url }, .stdin = .ignore, .stdout = .ignore, .stderr = .ignore })) |spawned| {
-            var child = spawned;
-            if (child.wait(io)) |term| {
-                if (term == .exited and term.exited == 0) return;
-            } else |_| {}
-        } else |_| {}
-    } else |_| {}
-    var child = std.process.spawn(io, .{ .argv = &.{ "open", url }, .stdin = .ignore, .stdout = .ignore, .stderr = .ignore }) catch return;
-    _ = child.wait(io) catch {};
 }
 
 /// The account Claude Code is signed in as, from `claude auth status`.
@@ -582,7 +556,7 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     display.ok(ok_msg);
     const info_msg = try std.fmt.allocPrint(
         gpa,
-        "Now run: `claude auth login` and/or login on Claude Desktop\n  When you are done, run: `claudacity save {s}`\n",
+        "Now sign Claude Code in with: `claudacity login {s}`, and Claude Desktop in its own window\n",
         .{name},
     );
     defer gpa.free(info_msg);
@@ -750,11 +724,11 @@ pub fn cmdLogin(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     const p_json = try paths.profileJsonIn(gpa, h, name);
     defer gpa.free(p_json);
     if (!desktop.pathExists(gpa, p_json)) {
-        display.print("❌  Profile '{s}' not found. Use: claudacity save {s}\n", .{ name, name });
+        display.print("❌  Profile '{s}' not found. Create it first: claudacity new {s}\n", .{ name, name });
         return error.ProfileNotFound;
     }
     if (std.c.isatty(std.posix.STDIN_FILENO) != 1) {
-        display.print("❌  Signing in opens a browser, so it needs a terminal.\n", .{});
+        display.print("❌  Signing in takes a pasted code, so it needs a terminal.\n", .{});
         return error.NotATerminal;
     }
 
@@ -769,13 +743,27 @@ pub fn cmdLogin(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     const temp_svc = oauth_login.configDirService(&svc_buf, dir);
     defer keychain.delete(gpa, io, temp_svc) catch {};
 
+    // `claude auth login` records the account it signed in as (`oauthAccount`)
+    // in `$CLAUDE_CONFIG_DIR/.claude.json`. Linking that to the profile's JSON
+    // lands it there, so `whoami` and Desktop's session paths follow the new
+    // account; a sign-in that is not saved puts the old JSON back.
+    const before = readFileAlloc(gpa, p_json);
+    defer if (before) |b| gpa.free(b);
+    var saved = false;
+    defer if (!saved) if (before) |b| writeFileAll(gpa, p_json, b) catch {};
+    {
+        const link = try std.fs.path.join(gpa, &.{ dir, ".claude.json" });
+        defer gpa.free(link);
+        try std.Io.Dir.cwd().symLink(io, p_json, link, .{});
+    }
+
     const want = expectedAccount(gpa, h, name);
     defer if (want) |w| gpa.free(w);
     const as = want orelse "its account";
 
     var tries: usize = 0;
     while (tries < SIGN_IN_TRIES) : (tries += 1) {
-        display.print("🔑  Sign in as {s} in the private window that opens.\n", .{as});
+        signInPrompt(name, want);
         if (!runLoginIn(gpa, io, want, dir)) {
             display.print("❌  Sign-in did not finish.\n", .{});
             return error.SignInFailed;
@@ -796,6 +784,7 @@ pub fn cmdLogin(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
         if (want != null and (got == null or !accounts.same(got.?, want.?))) {
             display.print("❌  Signed in as {s}, not {s}.\n", .{ got orelse "an unknown account", as });
             keychain.delete(gpa, io, temp_svc) catch {};
+            if (before) |b| writeFileAll(gpa, p_json, b) catch {};
             continue;
         }
         if (want == null) if (got) |g| accounts.pin(gpa, h, name, g) catch {};
@@ -809,6 +798,7 @@ pub fn cmdLogin(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
         const cur = try currentIn(gpa, h);
         defer if (cur) |c_name| gpa.free(c_name);
         if (cur) |c_name| if (std.mem.eql(u8, c_name, name)) try keychain.set(gpa, io, KEYCHAIN_CODE, acct, login);
+        saved = true;
 
         const msg = try std.fmt.allocPrint(gpa, "Signed '{s}' in as {s} and saved it", .{ name, got orelse as });
         defer gpa.free(msg);
