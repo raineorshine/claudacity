@@ -49,3 +49,18 @@ the local install off a Mac, and delivering through `scripts/release.sh`.
 
 Say in the commit message which gates ran as cloud stand-ins and whether the user ran the change
 against real profiles.
+
+## Switching accounts on the box
+
+claudacity is not built for Linux, and porting it would not switch the box's chats. Supernova starts
+each chat's `claude` with `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`, a pipe carrying a
+`claude setup-token` token that outranks `$CLAUDE_CONFIG_DIR/.credentials.json`. The token comes from
+the server's own `claude-accounts.json`, falling back to `SUPERNOVA_CLAUDE_OAUTH_TOKEN` in root's env
+file, and `chat` can neither read nor write either one. Switch the box's account in supernova's
+Settings → Claude account; a chat moves to it on its next send. A setup token holds only
+`user:inference`, so `usage` and `handoff` could not read those accounts either.
+
+A Linux port was weighed and set aside (November 2026). It would keep logins in `.credentials.json`
+and `0600` files instead of the Keychain, skip every Desktop step, replace `launchd` with a systemd
+timer, and swap `_NSGetExecutablePath` for `std.fs.selfExePath`. That would switch only a `claude`
+run by hand in a shell on the box.
