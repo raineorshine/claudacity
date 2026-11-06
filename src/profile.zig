@@ -61,6 +61,17 @@ fn saveAs(gpa: std.mem.Allocator, io: std.Io, name: []const u8, kind: SaveKind) 
     const h = try paths.home(gpa);
     defer gpa.free(h);
 
+    // Only the first save, of a setup claudacity has not moved yet, creates the
+    // profile's files. Any other unknown name would get the active profile's
+    // login under a profile nothing lists.
+    try migrateToProfileIn(gpa, io, h, name);
+    const p_json = try paths.profileJsonIn(gpa, h, name);
+    defer gpa.free(p_json);
+    if (!desktop.pathExists(gpa, p_json)) {
+        display.print("❌  Profile '{s}' does not exist. To add an account, create it first: claudacity new {s}\n", .{ name, name });
+        return error.ProfileNotFound;
+    }
+
     var c_token: ?[]const u8 = null;
     var c_acct: []const u8 = "";
     if (keychain.get(gpa, io, KEYCHAIN_CODE)) |token| {
@@ -72,8 +83,6 @@ fn saveAs(gpa: std.mem.Allocator, io: std.Io, name: []const u8, kind: SaveKind) 
     }
     defer if (c_token) |t| gpa.free(t);
     defer if (c_acct.len > 0) gpa.free(c_acct);
-
-    try migrateToProfileIn(gpa, io, h, name);
 
     if (c_token) |token| keep: {
         // The live login's own account, else the one `claude auth login` wrote.
