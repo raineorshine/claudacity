@@ -619,7 +619,7 @@ pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !voi
             display.err("No profiles saved yet.");
             return error.NoProfiles;
         }
-        const chosen = try fuzzyPick(gpa, io, h, profiles, null, "Delete profile > ");
+        const chosen = try fuzzyPick(gpa, io, h, profiles, null, null, "Delete profile > ");
         break :blk chosen orelse {
             display.err("No profile selected");
             return error.NoneSelected;
@@ -735,7 +735,10 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
     const labels = try usage.pickerLabels(gpa, io, profiles);
     defer usage.freeLabels(gpa, labels);
 
-    if (try fuzzyPick(gpa, io, h, profiles, labels, "Pick profile > ")) |chosen| {
+    const cur = try currentIn(gpa, h);
+    defer if (cur) |c_name| gpa.free(c_name);
+
+    if (try fuzzyPick(gpa, io, h, profiles, labels, cur, "Pick profile > ")) |chosen| {
         defer gpa.free(chosen);
         try cmdUse(gpa, io, chosen, .{});
     }
@@ -1103,9 +1106,12 @@ pub fn pickerName(line: []const u8) []const u8 {
     return std.mem.trim(u8, line[0..end], " \t\n\r");
 }
 
-fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8, prompt: []const u8) !?[]const u8 {
+/// `start` names the profile the cursor starts on (the active one in `pick`); null starts on the first.
+fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8, start: ?[]const u8, prompt: []const u8) !?[]const u8 {
     const cmd = try fuzzyCmd(gpa, io);
     defer gpa.free(cmd);
+    const bind = try startBind(gpa, cmd, profiles, start);
+    defer if (bind) |b| gpa.free(b);
 
     const items = try pickerLinesIn(gpa, base, profiles, labels);
     defer {
@@ -1115,8 +1121,12 @@ fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []c
 
     // The first item is the column header; --reverse draws it above the profiles instead of below.
     // stdin=pipe (we write items), stdout=pipe (we read selection), stderr=inherit (sk renders UI to terminal)
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(gpa);
+    try argv.appendSlice(gpa, &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt });
+    if (bind) |b| try argv.appendSlice(gpa, &.{ "--bind", b });
     var child = try std.process.spawn(io, .{
-        .argv = &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt },
+        .argv = argv.items,
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .inherit,
@@ -1150,6 +1160,19 @@ fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []c
     return try gpa.dupe(u8, chosen);
 }
 
+/// The `--bind` that moves the cursor from the first profile to `start` once the list has loaded,
+/// or null when it starts on the first anyway. sk (5.4+) moves by rows with `down(n)`; fzf jumps
+/// to a 1-based row with `pos(n)`. Both count rows below the header line.
+fn startBind(gpa: std.mem.Allocator, cmd: []const u8, profiles: []const []const u8, start: ?[]const u8) !?[]const u8 {
+    const name = start orelse return null;
+    const i = for (profiles, 0..) |p, at| {
+        if (std.mem.eql(u8, p, name)) break at;
+    } else return null;
+    if (i == 0) return null;
+    if (std.mem.eql(u8, cmd, "sk")) return try std.fmt.allocPrint(gpa, "load:down({d})", .{i});
+    return try std.fmt.allocPrint(gpa, "load:pos({d})", .{i + 1});
+}
+
 fn fuzzyCmd(gpa: std.mem.Allocator, io: std.Io) ![]const u8 {
     for (&[_][]const u8{ "sk", "fzf" }) |cmd| {
         const result = std.process.run(gpa, io, .{
@@ -1176,6 +1199,20 @@ fn deleteTreeC(gpa: std.mem.Allocator, io: std.Io, path: []const u8) !void {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+test "startBind moves the cursor to the start profile" {
+    const alloc = std.testing.allocator;
+    const profiles = [_][]const u8{ "a", "b", "c" };
+    const sk = (try startBind(alloc, "sk", &profiles, "c")).?;
+    defer alloc.free(sk);
+    try std.testing.expectEqualStrings("load:down(2)", sk);
+    const fzf = (try startBind(alloc, "fzf", &profiles, "c")).?;
+    defer alloc.free(fzf);
+    try std.testing.expectEqualStrings("load:pos(3)", fzf);
+    try std.testing.expect((try startBind(alloc, "sk", &profiles, "a")) == null);
+    try std.testing.expect((try startBind(alloc, "sk", &profiles, "x")) == null);
+    try std.testing.expect((try startBind(alloc, "sk", &profiles, null)) == null);
+}
 
 test "listIn dir vazio" {
     const alloc = std.testing.allocator;
