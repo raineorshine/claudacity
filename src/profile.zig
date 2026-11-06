@@ -549,7 +549,10 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
 
     try switchLinksIn(gpa, h, name);
     try desktop.swap(gpa, cur_name, name);
-    if (cur_name) |cn| carryDesktopSettings(gpa, io, h, cn, name);
+    if (cur_name) |cn| {
+        carryDesktopSettings(gpa, io, h, cn, name);
+        shareIntoNew(gpa, io, h, cn, name);
+    }
 
     const ok_msg = try std.fmt.allocPrint(gpa, "Profile '{s}' created and activated.", .{name});
     defer gpa.free(ok_msg);
@@ -561,6 +564,32 @@ pub fn cmdNew(gpa: std.mem.Allocator, io: std.Io, name: []const u8) !void {
     );
     defer gpa.free(info_msg);
     display.info(info_msg);
+}
+
+/// A new profile shares skills, plugins and MCP servers from the profile the
+/// outgoing one shares from (else the outgoing one), so it starts with the same
+/// tools and keeps getting them on each switch. The profile already exists by
+/// now, so a failure only warns: the share is recorded first, and the next
+/// switch to the profile retries the plugin and MCP sync.
+fn shareIntoNew(gpa: std.mem.Allocator, io: std.Io, h: []const u8, outgoing: []const u8, name: []const u8) void {
+    const source = skills.newSourceIn(gpa, h, outgoing) catch |err| {
+        display.print("⚠️  Could not read what '{s}' shares from: {s}. Run `claudacity share <source> {s}`.\n", .{ outgoing, @errorName(err), name });
+        return;
+    };
+    defer gpa.free(source);
+    const count = skills.shareIn(gpa, h, source, name) catch |err| {
+        display.print("⚠️  Could not share from '{s}' into '{s}': {s}. Run `claudacity share {s} {s}`.\n", .{ source, name, @errorName(err), source, name });
+        return;
+    };
+    const plugin_result = plugins.syncIn(gpa, io, h, source, name) catch |err| {
+        display.print("⚠️  Could not install '{s}''s plugins into '{s}': {s}. They install on the next `claudacity use {s}`.\n", .{ source, name, @errorName(err), name });
+        return;
+    };
+    const mcp_result = mcp.syncIn(gpa, io, h, source, name) catch |err| blk: {
+        display.print("⚠️  Could not copy '{s}''s MCP servers into '{s}': {s}\n", .{ source, name, @errorName(err) });
+        break :blk mcp.SyncResult{};
+    };
+    display.print("Sharing from '{s}' ({d} skill links, {d} plugins installed, {d} MCP servers added).\n", .{ source, count, plugin_result.installed, mcp_result.added });
 }
 
 pub fn cmdShare(gpa: std.mem.Allocator, io: std.Io, source: []const u8, target: []const u8) !void {

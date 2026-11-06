@@ -116,13 +116,15 @@ holds; a failure only warns and never stops the switch.
 
 ### Skills, plugins and MCP servers in a new profile
 
-`claudacity new` creates an empty `~/.claude.<profile>/` directory. Claude Code user
-skills in `~/.claude/skills/`, installed plugins and user-scoped MCP servers
-therefore do not appear in the new profile automatically. The account's conversations and credentials stay
-separate too.
+`claudacity new` creates a profile that shares from the one you were on, or
+from the profile that one shares from: create `dev` while on `overflow`, which
+shares from `work`, and `dev` shares from `work` too. Local user skills in
+`~/.claude/skills/`, installed plugins and user-scoped MCP servers are copied in
+at once and kept in step on each switch. The account's conversations and
+credentials stay separate. If the plugin install fails at creation, the next
+`claudacity use` of the profile retries it.
 
-To keep **local user skills, installed plugins and MCP servers** from `work` available in `personal`, opt in after
-creating both profiles:
+To share between profiles that already exist:
 
 ```bash
 claudacity share work personal

@@ -12,10 +12,14 @@ const c = @cImport({
 
 const marker_name = ".claudacity-skills-source";
 
+/// A profile name is joined into a path, so it may hold no `/` and may not
+/// start with `.` (which also refuses `.` and `..`). `@` and `.` are allowed:
+/// `claudacity new` takes any name, and a profile named for its account's email
+/// must be able to share.
 fn validName(name: []const u8) bool {
-    if (name.len == 0 or name.len > 128) return false;
+    if (name.len == 0 or name.len > 128 or name[0] == '.') return false;
     for (name) |ch| {
-        if (!std.ascii.isAlphanumeric(ch) and ch != '-' and ch != '_') return false;
+        if (!std.ascii.isAlphanumeric(ch) and ch != '-' and ch != '_' and ch != '.' and ch != '@') return false;
     }
     return true;
 }
@@ -41,6 +45,14 @@ pub fn sourceForIn(gpa: std.mem.Allocator, base: []const u8, target: []const u8)
     const name = std.mem.trim(u8, buf[0..@intCast(n)], "\r\n");
     if (!validName(name)) return error.InvalidSkillsSource;
     return try gpa.dupe(u8, name);
+}
+
+/// The profile a new profile created from `current` shares from: the profile
+/// `current` itself shares from, else `current`. So every profile made while
+/// on an overflow account shares from the same root as that account does.
+pub fn newSourceIn(gpa: std.mem.Allocator, base: []const u8, current: []const u8) ![]const u8 {
+    if (try sourceForIn(gpa, base, current)) |source| return source;
+    return gpa.dupe(u8, current);
 }
 
 fn skillDir(gpa: std.mem.Allocator, base: []const u8, profile: []const u8) ![]const u8 {
@@ -247,4 +259,47 @@ test "share skills rejects unsafe names and a different source" {
     }
     try std.testing.expectEqual(@as(usize, 0), try shareIn(alloc, base, "primary", "overflow"));
     try std.testing.expectError(error.DifferentSkillsSource, shareIn(alloc, base, "other", "overflow"));
+}
+
+test "share accepts an email-shaped profile name and refuses a path" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.Options.debug_io, &buf);
+    const base = try alloc.dupe(u8, buf[0..n]);
+    defer alloc.free(base);
+    for (&[_][]const u8{ "primary", "dev1@example.cc" }) |name| {
+        const dir = try paths.profileDirIn(alloc, base, name);
+        defer alloc.free(dir);
+        try desktop.mkdirAllC(alloc, dir);
+    }
+    try std.testing.expectEqual(@as(usize, 0), try shareIn(alloc, base, "primary", "dev1@example.cc"));
+    const source = (try sourceForIn(alloc, base, "dev1@example.cc")).?;
+    defer alloc.free(source);
+    try std.testing.expectEqualStrings("primary", source);
+    try std.testing.expectError(error.InvalidProfileName, shareIn(alloc, base, "primary", ".."));
+    try std.testing.expectError(error.InvalidProfileName, shareIn(alloc, base, "primary", ".hidden"));
+}
+
+test "a new profile shares from the root the current profile shares from" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.Options.debug_io, &buf);
+    const base = try alloc.dupe(u8, buf[0..n]);
+    defer alloc.free(base);
+    for (&[_][]const u8{ "primary", "overflow" }) |name| {
+        const dir = try paths.profileDirIn(alloc, base, name);
+        defer alloc.free(dir);
+        try desktop.mkdirAllC(alloc, dir);
+    }
+    const from_primary = try newSourceIn(alloc, base, "primary");
+    defer alloc.free(from_primary);
+    try std.testing.expectEqualStrings("primary", from_primary);
+    _ = try shareIn(alloc, base, "primary", "overflow");
+    const from_overflow = try newSourceIn(alloc, base, "overflow");
+    defer alloc.free(from_overflow);
+    try std.testing.expectEqualStrings("primary", from_overflow);
 }
