@@ -35,8 +35,10 @@ session runs the stand-ins below and asks the user only for what needs their rea
 `scripts/ship.sh` calls whatever `zig` is first on `PATH`. A wrapper `zig` there does the following:
 
 - appends `-Dtarget=aarch64-macos --sysroot /tmp/deps/mac` to `zig build`;
-- runs `zig build test` natively with `--search-prefix /tmp/deps/pfx`, and passes only when the
-  failures are exactly the baseline set;
+- runs `zig build test` natively with `--search-prefix /tmp/deps/pfx --summary all`, and passes only
+  when the sorted, unique `error: '<test>' failed` lines match the baseline run's exactly. Compare
+  those names, not the summary's counts: the crash in the cloud test adds a count without a line of
+  its own, so the November 2026 baseline was six names against a summary of 6 failed and 1 crashed;
 - exits 1 when its working directory ends in `claudacity-main`, the script's install checkout.
 
 With `CLAUDACITY_BIN_DIR` pointing at a scratch directory, the script gates, squashes and pushes, then
