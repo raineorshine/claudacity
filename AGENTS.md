@@ -5,6 +5,7 @@ A Zig 0.16 CLI for macOS that swaps Claude Desktop and Claude Code between saved
 ## Gates
 
 - `zig build`, `zig build -Doptimize=ReleaseSmall` and `zig build test` must pass. There is no CI: the GitHub account has no Actions minutes, so nothing here may rely on Actions, and the local run is the gate.
+- A cloud session runs on Linux, where neither the gates nor the Mac smokes run as written, and Raine does not want to build on the Mac: use the stand-ins in `docs/cloud-sessions.md` (cross-compiled Mac builds, Linux tests against an unchanged-`HEAD` baseline, a wrapper `zig` for `ship.sh`) and ask the user only for a command that needs their real profiles, with its output pasted back.
 - Judge a test run by its exit code; `zig build test` prints `Build Summary` only on a failure or with `--summary all`. An existing Desktop test prints `❌  Cookies DB não encontrado` and a `failed command:` line on every passing run.
 - Run each gate as its own background command and read its output file: compiling `zig build test` alone takes about a minute, so a chain of gates outlasts the Bash tool's foreground timeout.
 - `zig-out/bin/claudacity save <missing-name>` is the safe smoke for `save`'s refusal: it exits 1 and leaves no `~/.claude.<name>*` file, Keychain item or `accounts.json` entry.
@@ -69,4 +70,5 @@ After a real release, curl the asset `install.sh` names and run its `--version`.
 ## Docs
 
 - `docs/claude-internals.md` — how Claude Desktop, Claude Code and Anthropic's OAuth endpoints behave where claudacity depends on them: login refresh and rotation, the usage and cloud-session APIs, Desktop's session store, unattended CLI runs, launchd quirks, and how to find an endpoint no doc lists.
+- `docs/cloud-sessions.md` — gating, testing and shipping from a Linux cloud session: what the box lacks, where its toolchain and sqlite live, the 7 tests that fail there on `main`, and the `ship.sh` wrapper.
 - `docs/plans/` — unified plans; `2026-09-27-0845-feat-nightly-account-handoff-plan.md` holds the product decisions behind `claudacity handoff` (why no request proxy, what moves and what stays).
