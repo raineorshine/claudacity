@@ -622,7 +622,7 @@ pub fn cmdDelete(gpa: std.mem.Allocator, io: std.Io, name_opt: ?[]const u8) !voi
             display.err("No profiles saved yet.");
             return error.NoProfiles;
         }
-        const chosen = try fuzzyPick(gpa, io, h, profiles, null, "Delete profile > ");
+        const chosen = try fuzzyPick(gpa, io, h, profiles, null, "Delete profile > ", false);
         break :blk chosen orelse {
             display.err("No profile selected");
             return error.NoneSelected;
@@ -738,7 +738,7 @@ pub fn cmdPick(gpa: std.mem.Allocator, io: std.Io) !void {
     const labels = try usage.pickerLabels(gpa, io, profiles);
     defer usage.freeLabels(gpa, labels);
 
-    if (try fuzzyPick(gpa, io, h, profiles, labels, "Pick profile > ")) |chosen| {
+    if (try fuzzyPick(gpa, io, h, profiles, labels, "Pick profile > ", true)) |chosen| {
         defer gpa.free(chosen);
         try cmdUse(gpa, io, chosen, .{});
     }
@@ -1122,9 +1122,42 @@ pub fn pickerName(line: []const u8) []const u8 {
     return std.mem.trim(u8, line[0..end], " \t\n\r");
 }
 
-fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8, prompt: []const u8) !?[]const u8 {
+/// The `--bind` value that moves the picker's cursor from the first profile to
+/// `active`, one `down` per row (both sk and fzf run `load` once the list is
+/// read); null when `active` is first or not listed.
+pub fn cursorBind(gpa: std.mem.Allocator, profiles: []const []const u8, active: ?[]const u8) !?[]u8 {
+    const cur = active orelse return null;
+    const idx = for (profiles, 0..) |p, i| {
+        if (std.mem.eql(u8, p, cur)) break i;
+    } else return null;
+    if (idx == 0) return null;
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.appendSlice(gpa, "load:");
+    for (0..idx) |i| try out.appendSlice(gpa, if (i == 0) "down" else "+down");
+    return try out.toOwnedSlice(gpa);
+}
+
+test "cursorBind moves to the current profile" {
+    const gpa = std.testing.allocator;
+    const profiles = [_][]const u8{ "dev1", "dev2", "primary" };
+    const b = (try cursorBind(gpa, &profiles, "primary")).?;
+    defer gpa.free(b);
+    try std.testing.expectEqualStrings("load:down+down", b);
+    try std.testing.expect((try cursorBind(gpa, &profiles, "dev1")) == null);
+    try std.testing.expect((try cursorBind(gpa, &profiles, "gone")) == null);
+    try std.testing.expect((try cursorBind(gpa, &profiles, null)) == null);
+}
+
+fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []const []const u8, labels: ?[]const ?[]const u8, prompt: []const u8, at_current: bool) !?[]const u8 {
     const cmd = try fuzzyCmd(gpa, io);
     defer gpa.free(cmd);
+
+    // The cursor starts on the active profile, not the first row.
+    const active = if (at_current) currentIn(gpa, base) catch null else null;
+    defer if (active) |a| gpa.free(a);
+    const bind = try cursorBind(gpa, profiles, active);
+    defer if (bind) |b| gpa.free(b);
 
     const items = try pickerLinesIn(gpa, base, profiles, labels);
     defer {
@@ -1135,7 +1168,10 @@ fn fuzzyPick(gpa: std.mem.Allocator, io: std.Io, base: []const u8, profiles: []c
     // The first item is the column header; --reverse draws it above the profiles instead of below.
     // stdin=pipe (we write items), stdout=pipe (we read selection), stderr=inherit (sk renders UI to terminal)
     var child = try std.process.spawn(io, .{
-        .argv = &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt },
+        .argv = if (bind) |b|
+            &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt, "--bind", b }
+        else
+            &.{ cmd, "--ansi", "--reverse", "--header-lines", "1", "--prompt", prompt },
         .stdin = .pipe,
         .stdout = .pipe,
         .stderr = .inherit,
