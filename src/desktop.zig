@@ -71,17 +71,6 @@ pub fn swap(gpa: std.mem.Allocator, current_name: ?[]const u8, to_name: []const 
     return swapIn(gpa, h, current_name, to_name);
 }
 
-pub fn getSessionKey(gpa: std.mem.Allocator, io: std.Io) ![]const u8 {
-    const raw_key = keychain.get(gpa, io, KEYCHAIN_DESKTOP) catch {
-        display.err("Claude Safe Storage não encontrado no Keychain. Claude Desktop está instalado?");
-        return error.KeychainNotFound;
-    };
-    defer gpa.free(raw_key);
-    const h = try paths.home(gpa);
-    defer gpa.free(h);
-    return getSessionKeyWithKeyIn(gpa, h, raw_key);
-}
-
 // ── Variantes _in ─────────────────────────────────────────────────────────────
 
 pub fn hasDataIn(gpa: std.mem.Allocator, base: []const u8, name: []const u8) bool {
@@ -149,16 +138,18 @@ pub fn swapIn(gpa: std.mem.Allocator, base: []const u8, current_name: ?[]const u
     }
 }
 
-pub fn getSessionKeyWithKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key: []const u8) ![]const u8 {
-    return readSessionKeyIn(gpa, base, raw_key) catch |err| {
-        switch (err) {
-            error.CookiesDbNotFound => display.err("Cookies DB não encontrado"),
-            error.SessionKeyNotFound => display.err("Claude Desktop: cookie sessionKey não encontrado"),
-            error.TokenNotFound => display.err("Claude Desktop: token não encontrado no cookie"),
-            else => {},
-        }
-        return err;
-    };
+/// Where the live Desktop data directory under `base` keeps its cookie
+/// database: `Network/Cookies` since Chromium 96 moved it, `Cookies` before.
+/// Null when Desktop has written neither, as in a profile it has not run under.
+pub fn cookiesPathIn(gpa: std.mem.Allocator, base: []const u8) !?[]const u8 {
+    const desktop_dir = try paths.desktopDirIn(gpa, base);
+    defer gpa.free(desktop_dir);
+    for ([_][]const u8{ "Network/Cookies", "Cookies" }) |rel| {
+        const path = try std.fs.path.join(gpa, &.{ desktop_dir, rel });
+        if (pathExists(gpa, path)) return path;
+        gpa.free(path);
+    }
+    return null;
 }
 
 /// The claude.ai session cookie of whichever account the live Desktop data
@@ -172,12 +163,8 @@ pub fn sessionKeyIn(gpa: std.mem.Allocator, io: std.Io, base: []const u8) ![]con
 /// Opens the cookie database as immutable so the read works while Desktop
 /// holds it open.
 fn readSessionKeyIn(gpa: std.mem.Allocator, base: []const u8, raw_key: []const u8) ![]const u8 {
-    const desktop_dir = try paths.desktopDirIn(gpa, base);
-    defer gpa.free(desktop_dir);
-    const cookies_path = try std.fs.path.join(gpa, &.{ desktop_dir, "Cookies" });
+    const cookies_path = (try cookiesPathIn(gpa, base)) orelse return error.CookiesDbNotFound;
     defer gpa.free(cookies_path);
-
-    if (!pathExists(gpa, cookies_path)) return error.CookiesDbNotFound;
 
     const key = crypto.deriveKey(raw_key);
 
@@ -276,12 +263,8 @@ pub fn mkdirAllC(gpa: std.mem.Allocator, abs_path: []const u8) !void {
 }
 
 pub fn hasSessionKeyCookie(gpa: std.mem.Allocator, base: []const u8) bool {
-    const desktop_dir = paths.desktopDirIn(gpa, base) catch return false;
-    defer gpa.free(desktop_dir);
-    const cookies_path = std.fs.path.join(gpa, &.{ desktop_dir, "Cookies" }) catch return false;
+    const cookies_path = (cookiesPathIn(gpa, base) catch return false) orelse return false;
     defer gpa.free(cookies_path);
-
-    if (!pathExists(gpa, cookies_path)) return false;
 
     const db_path_z = gpa.dupeZ(u8, cookies_path) catch return false;
     defer gpa.free(db_path_z);
@@ -387,9 +370,9 @@ test "getSessionKey decripta cookie" {
 
     const raw_key = "test_storage_key";
     const token = "sk-ant-sid01-test-token-abc123";
-    try makeCookiesDb(alloc, base, raw_key, token);
+    try makeCookiesDb(alloc, base, "Cookies", raw_key, token);
 
-    const result = try getSessionKeyWithKeyIn(alloc, base, raw_key);
+    const result = try readSessionKeyIn(alloc, base, raw_key);
     defer alloc.free(result);
     try std.testing.expectEqualStrings(token, result);
 }
@@ -403,8 +386,8 @@ test "getSessionKey encontra sk-ant no meio de ruído" {
     const base = try alloc.dupe(u8, base_buf[0..base_len]);
     defer alloc.free(base);
 
-    try makeCookiesDb(alloc, base, "key", "\x00\x01noise\x00sk-ant-sid01-real-token");
-    const result = try getSessionKeyWithKeyIn(alloc, base, "key");
+    try makeCookiesDb(alloc, base, "Cookies", "key", "\x00\x01noise\x00sk-ant-sid01-real-token");
+    const result = try readSessionKeyIn(alloc, base, "key");
     defer alloc.free(result);
     try std.testing.expectEqualStrings("sk-ant-sid01-real-token", result);
 }
@@ -417,16 +400,50 @@ test "getSessionKey falha quando DB não existe" {
     const base_len = try tmp.dir.realPath(std.Options.debug_io, &base_buf);
     const base = try alloc.dupe(u8, base_buf[0..base_len]);
     defer alloc.free(base);
-    try std.testing.expectError(error.CookiesDbNotFound, getSessionKeyWithKeyIn(alloc, base, "key"));
+    try std.testing.expectError(error.CookiesDbNotFound, readSessionKeyIn(alloc, base, "key"));
 }
 
-fn makeCookiesDb(alloc: std.mem.Allocator, base: []const u8, raw_key: []const u8, token: []const u8) !void {
+test "getSessionKey lê o banco em Network/Cookies" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var base_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const base_len = try tmp.dir.realPath(std.Options.debug_io, &base_buf);
+    const base = try alloc.dupe(u8, base_buf[0..base_len]);
+    defer alloc.free(base);
+
+    try makeCookiesDb(alloc, base, "Network/Cookies", "key", "sk-ant-sid01-network");
+    const result = try readSessionKeyIn(alloc, base, "key");
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("sk-ant-sid01-network", result);
+    try std.testing.expect(hasSessionKeyCookie(alloc, base));
+}
+
+test "cookiesPathIn prefere Network/Cookies a um Cookies antigo" {
+    const alloc = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var base_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const base_len = try tmp.dir.realPath(std.Options.debug_io, &base_buf);
+    const base = try alloc.dupe(u8, base_buf[0..base_len]);
+    defer alloc.free(base);
+
+    try std.testing.expectEqual(@as(?[]const u8, null), try cookiesPathIn(alloc, base));
+    try makeCookiesDb(alloc, base, "Cookies", "key", "sk-ant-sid01-legacy");
+    try makeCookiesDb(alloc, base, "Network/Cookies", "key", "sk-ant-sid01-network");
+    const path = (try cookiesPathIn(alloc, base)).?;
+    defer alloc.free(path);
+    try std.testing.expect(std.mem.endsWith(u8, path, "Claude/Network/Cookies"));
+}
+
+/// `rel` is the database's path inside Desktop's data directory.
+fn makeCookiesDb(alloc: std.mem.Allocator, base: []const u8, rel: []const u8, raw_key: []const u8, token: []const u8) !void {
     const claude_dir = try paths.desktopDirIn(alloc, base);
     defer alloc.free(claude_dir);
-    try mkdirAllC(alloc, claude_dir);
 
-    const db_path = try std.fs.path.join(alloc, &.{ claude_dir, "Cookies" });
+    const db_path = try std.fs.path.join(alloc, &.{ claude_dir, rel });
     defer alloc.free(db_path);
+    try mkdirAllC(alloc, std.fs.path.dirname(db_path).?);
 
     const key = crypto.deriveKey(raw_key);
     const encrypted = try crypto.encryptV10(alloc, token, key);

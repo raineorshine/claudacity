@@ -412,10 +412,9 @@ fn cmdDoctor(gpa: std.mem.Allocator, io: std.Io) !void {
         issues += 1;
     }
 
-    const cookies_path = try std.fs.path.join(gpa, &.{ desktop_dir, "Cookies" });
-    defer gpa.free(cookies_path);
-    if (desktop.pathExists(gpa, cookies_path)) {
-        doctorOk("Cookies DB", "found");
+    if (try desktop.cookiesPathIn(gpa, h)) |cookies_path| {
+        defer gpa.free(cookies_path);
+        doctorOk("Cookies DB", cookies_path[desktop_dir.len + 1 ..]);
     } else {
         doctorFail("Cookies DB", "missing");
         issues += 1;
@@ -506,16 +505,20 @@ fn cmdWhoami(gpa: std.mem.Allocator, io: std.Io) !void {
     }
 
     // ── Claude Desktop ───────────────────────────────────────────────────────
-    if (desktop.getSessionKey(gpa, io)) |token| {
+    display.section("Claude Desktop");
+    const home_dir = try paths.home(gpa);
+    defer gpa.free(home_dir);
+    if (desktop.sessionKeyIn(gpa, io, home_dir)) |token| {
         defer gpa.free(token);
-        display.section("Claude Desktop");
         display.row("Token type", "sessionKey (sk-ant-sid)");
         display.row("Status", "sessionKey found");
         display.row("Storage", "Electron cookie (AES encrypted)");
-    } else |_| {
-        display.section("Claude Desktop");
-        display.row("Status", "not running or no session found");
-    }
+    } else |err| display.row("Status", switch (err) {
+        error.CookiesDbNotFound => "no cookie database — Desktop has not run under this profile",
+        error.SessionKeyNotFound => "signed out of claude.ai (no sessionKey cookie)",
+        error.KeychainNotFound => "Claude Safe Storage missing from the Keychain — Desktop not installed?",
+        else => "could not read Desktop's session",
+    });
 
     // ── Perfis salvos ────────────────────────────────────────────────────────
     const profiles = try profile.list(gpa);
