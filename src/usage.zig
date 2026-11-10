@@ -284,31 +284,14 @@ pub fn activeWeekly(rows: []const ProfileUsage) ?Window {
     return null;
 }
 
-/// A reset time in local time, like "Thu Oct 8 @ 1pm EDT" ("1:30pm" when the minutes are not zero).
-fn formatReset(buf: []u8, epoch: i64) []const u8 {
-    const c = @cImport(@cInclude("time.h"));
-    var t: c.time_t = @intCast(epoch);
-    var tm: c.struct_tm = undefined;
-    _ = c.localtime_r(&t, &tm);
-    var day: [16]u8 = undefined;
-    var zone: [16]u8 = undefined;
-    const day_n = c.strftime(&day, day.len, "%a %b", &tm);
-    const zone_n = c.strftime(&zone, zone.len, "%Z", &tm);
-    const hour: u32 = @intCast(@mod(tm.tm_hour + 11, 12) + 1);
-    const ampm: []const u8 = if (tm.tm_hour < 12) "am" else "pm";
-    if (tm.tm_min == 0) {
-        return std.fmt.bufPrint(buf, "{s} {d} @ {d}{s} {s}", .{ day[0..day_n], @as(u32, @intCast(tm.tm_mday)), hour, ampm, zone[0..zone_n] }) catch "";
-    }
-    return std.fmt.bufPrint(buf, "{s} {d} @ {d}:{d:0>2}{s} {s}", .{ day[0..day_n], @as(u32, @intCast(tm.tm_mday)), hour, @as(u32, @intCast(tm.tm_min)), ampm, zone[0..zone_n] }) catch "";
-}
-
-/// Time left until a reset, like "in 3h 12m" or "in 42m"; minutes round up, so the last
-/// minute reads "in 1m" and a reset already past reads "now".
-fn formatIn(buf: []u8, secs: i64) []const u8 {
+/// Time left until a reset, like "3d 4h", "3h 12m" or "42m"; minutes round up, so the last
+/// minute reads "1m" and a reset already past reads "now".
+fn formatLeft(buf: []u8, secs: i64) []const u8 {
     if (secs <= 0) return "now";
     const mins: u64 = @intCast(@divFloor(secs + 59, 60));
-    if (mins < 60) return std.fmt.bufPrint(buf, "in {d}m", .{mins}) catch "";
-    return std.fmt.bufPrint(buf, "in {d}h {d}m", .{ mins / 60, mins % 60 }) catch "";
+    if (mins < 60) return std.fmt.bufPrint(buf, "{d}m", .{mins}) catch "";
+    if (mins < 24 * 60) return std.fmt.bufPrint(buf, "{d}h {d}m", .{ mins / 60, mins % 60 }) catch "";
+    return std.fmt.bufPrint(buf, "{d}d {d}h", .{ mins / (24 * 60), mins % (24 * 60) / 60 }) catch "";
 }
 
 /// ANSI color for a usage percentage: green, yellow, orange, then red once the profile is full.
@@ -331,39 +314,43 @@ fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
     return std.fmt.bufPrint(buf, "{s}{d:>5.1}%{s}", .{ code, pct, reset }) catch "";
 }
 
-/// One usage window's column: its percentage and reset time, or a placeholder of the
-/// same width when the API reports no window (no usage in the 5-hour window yet). With `now`,
-/// the reset reads as time left ("in 3h 12m"), which fits a narrower column than a date.
-fn formatWindow(buf: []u8, window: ?Window, color: bool, now: ?i64) []const u8 {
-    const width: usize = if (now == null) 33 else 18;
-    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<[2]}", .{ "--", "(no active window)", width }) catch "";
+/// Width of a window's time-left text, fitting its placeholder "no active window".
+const WINDOW_LEFT_WIDTH = 16;
+/// Visible width of `pickerLabel`'s usage columns: 5h percentage, weekly percentage, time left.
+const USAGE_COLS_WIDTH = 6 + 2 + 6 + 2 + WINDOW_LEFT_WIDTH;
+/// Width of every `pickerLabel`, which fits its longest failure label.
+const PICKER_WIDTH = 49;
+
+/// One usage window's column: its percentage and the time left until it resets ("3d 4h"), or a
+/// placeholder of the same width when the API reports no window (no usage in the 5-hour window yet).
+fn formatWindow(buf: []u8, window: ?Window, color: bool, now: i64) []const u8 {
+    const width: usize = WINDOW_LEFT_WIDTH;
+    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:<[2]}", .{ "--", "no active window", width }) catch "";
     var p: [32]u8 = undefined;
     var t: [64]u8 = undefined;
-    var r: [80]u8 = undefined;
-    const when = if (now) |n| formatIn(&t, w.resets_at - n) else formatReset(&t, w.resets_at);
-    const resets = std.fmt.bufPrint(&r, "(resets {s})", .{when}) catch "";
-    return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), resets, width }) catch "";
+    return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), formatLeft(&t, w.resets_at - now), width }) catch "";
 }
 
 /// The header over `pickerLabel`'s columns.
 pub const PICKER_HEADER = std.fmt.comptimePrint("{s:>6}  {s:>6}  {s}", .{ "5h", "7d", "resets" });
 
 /// The usage column `claudacity pick` shows beside a profile: 5-hour and weekly percentages, then
-/// the weekly reset, the same width for every state.
-pub fn pickerLabel(buf: []u8, state: State, color: bool) []const u8 {
+/// the time left until the weekly reset, the same width for every state.
+pub fn pickerLabel(buf: []u8, state: State, color: bool, now: i64) []const u8 {
     var why: [64]u8 = undefined;
     const text: []const u8 = switch (state) {
         .usage => |u| {
             var p: [32]u8 = undefined;
             var w: [128]u8 = undefined;
             const five = if (u.five_hour) |f| formatPct(&p, f.pct, color) else "    --";
-            return std.fmt.bufPrint(buf, "{s}  {s}", .{ five, formatWindow(&w, u.seven_day, color, null) }) catch "";
+            // Padded by hand: color escapes would count toward a `{s:<N}` width.
+            return std.fmt.bufPrint(buf, "{s}  {s}{s:[3]}", .{ five, formatWindow(&w, u.seven_day, color, now), "", PICKER_WIDTH - USAGE_COLS_WIDTH }) catch "";
         },
         .needs_sign_in => "needs signing in again",
         .no_login => "no saved login",
         .failed => |f| f.label(&why),
     };
-    return std.fmt.bufPrint(buf, "{s:<49}", .{text}) catch "";
+    return std.fmt.bufPrint(buf, "{s:<[1]}", .{ text, PICKER_WIDTH }) catch "";
 }
 
 /// Usage labels for `claudacity pick`, one per profile in `names` order; null where a profile has
@@ -372,6 +359,7 @@ pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u
     const rows = try collectWith(gpa, io, .{ .sync_plan = false });
     defer freeRows(gpa, rows);
     const color = useColor();
+    const now: i64 = @intCast(c_time.time(null));
     const labels = try gpa.alloc(?[]const u8, names.len);
     @memset(labels, null);
     errdefer freeLabels(gpa, labels);
@@ -379,7 +367,7 @@ pub fn pickerLabels(gpa: std.mem.Allocator, io: std.Io, names: []const []const u
         for (rows) |row| {
             if (!std.mem.eql(u8, row.name, name)) continue;
             var buf: [192]u8 = undefined;
-            label.* = try gpa.dupe(u8, pickerLabel(&buf, row.state, color));
+            label.* = try gpa.dupe(u8, pickerLabel(&buf, row.state, color, now));
             break;
         }
     }
@@ -402,7 +390,7 @@ pub fn printRows(rows: []const ProfileUsage) void {
                 var b2: [128]u8 = undefined;
                 display.print("{s}{s:<12} 5h {s}   7d {s}\n", .{
                     marker,                                  row.name,
-                    formatWindow(&b1, u.five_hour, color, now), formatWindow(&b2, u.seven_day, color, null),
+                    formatWindow(&b1, u.five_hour, color, now), formatWindow(&b2, u.seven_day, color, now),
                 });
             },
             .needs_sign_in => display.print("{s}{s:<12} needs signing in again (run: claudacity login {s})\n", .{ marker, row.name, row.name }),
@@ -457,47 +445,28 @@ test "parseUsage reports a null weekly window as unknown, not 0%" {
     try std.testing.expect(u.seven_day == null);
 }
 
-test "formatWindow shows a missing window as a placeholder, not a negative percentage" {
-    var buf: [128]u8 = undefined;
-    const missing = formatWindow(&buf, null, false, null);
-    try std.testing.expectEqualStrings("    --  (no active window)               ", missing);
-    var buf2: [128]u8 = undefined;
-    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 1790874000 }, false, null);
-    try std.testing.expectEqual(missing.len, present.len);
-    try std.testing.expect(std.mem.startsWith(u8, present, "  6.0%  (resets "));
-}
-
-test "formatWindow with now keeps one width for the longest time left and the placeholder" {
+test "formatWindow keeps one width for a missing window and the longest time left" {
     var buf: [128]u8 = undefined;
     const missing = formatWindow(&buf, null, false, 0);
+    try std.testing.expectEqualStrings("    --  no active window", missing);
     var buf2: [128]u8 = undefined;
-    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 5 * 3600 }, false, 1);
-    try std.testing.expectEqualStrings("  6.0%  (resets in 5h 0m) ", present);
-    try std.testing.expectEqual(missing.len, formatWindow(&buf2, .{ .pct = 6, .resets_at = 5 * 3600 - 60 }, false, 0).len);
+    const present = formatWindow(&buf2, .{ .pct = 6, .resets_at = 7 * 86400 - 60 }, false, 0);
+    try std.testing.expectEqualStrings("  6.0%  6d 23h          ", present);
+    try std.testing.expectEqual(missing.len, present.len);
 }
 
-test "formatIn reads like in 3h 12m, rounding minutes up" {
+test "formatLeft reads like 3d 4h, 3h 12m or 42m, rounding minutes up" {
     var buf: [32]u8 = undefined;
-    try std.testing.expectEqualStrings("in 3h 12m", formatIn(&buf, 3 * 3600 + 12 * 60));
-    try std.testing.expectEqualStrings("in 3h 12m", formatIn(&buf, 3 * 3600 + 11 * 60 + 1));
-    try std.testing.expectEqualStrings("in 42m", formatIn(&buf, 42 * 60));
-    try std.testing.expectEqualStrings("in 1m", formatIn(&buf, 5));
-    try std.testing.expectEqualStrings("in 1h 0m", formatIn(&buf, 3600));
-    try std.testing.expectEqualStrings("now", formatIn(&buf, 0));
-    try std.testing.expectEqualStrings("now", formatIn(&buf, -30));
-}
-
-test "formatReset reads like Thu Oct 1 @ 1pm EDT" {
-    const c = @cImport({
-        @cInclude("stdlib.h");
-        @cInclude("time.h");
-    });
-    _ = c.setenv("TZ", "America/New_York", 1);
-    c.tzset();
-    var buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings("Thu Oct 1 @ 1pm EDT", formatReset(&buf, 1790874000));
-    try std.testing.expectEqualStrings("Thu Oct 1 @ 1:30pm EDT", formatReset(&buf, 1790874000 + 1800));
-    try std.testing.expectEqualStrings("Fri Oct 2 @ 12am EDT", formatReset(&buf, 1790874000 + 11 * 3600));
+    try std.testing.expectEqualStrings("3d 4h", formatLeft(&buf, 3 * 86400 + 4 * 3600 + 59 * 60));
+    try std.testing.expectEqualStrings("1d 0h", formatLeft(&buf, 86400));
+    try std.testing.expectEqualStrings("23h 59m", formatLeft(&buf, 86400 - 60));
+    try std.testing.expectEqualStrings("3h 12m", formatLeft(&buf, 3 * 3600 + 12 * 60));
+    try std.testing.expectEqualStrings("3h 12m", formatLeft(&buf, 3 * 3600 + 11 * 60 + 1));
+    try std.testing.expectEqualStrings("42m", formatLeft(&buf, 42 * 60));
+    try std.testing.expectEqualStrings("1m", formatLeft(&buf, 5));
+    try std.testing.expectEqualStrings("1h 0m", formatLeft(&buf, 3600));
+    try std.testing.expectEqualStrings("now", formatLeft(&buf, 0));
+    try std.testing.expectEqualStrings("now", formatLeft(&buf, -30));
 }
 
 test "a 403 from the usage endpoint reads as the free plan" {
@@ -521,14 +490,21 @@ test "pickerLabel keeps one width across states" {
     const read = pickerLabel(&b1, .{ .usage = .{
         .five_hour = .{ .pct = 4, .resets_at = 1790874000 },
         .seven_day = .{ .pct = 77, .resets_at = 1790874000 },
-    } }, false);
-    const idle = pickerLabel(&b2, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false);
-    const failed = pickerLabel(&b3, .{ .failed = .{ .step = .usage, .status = 429 } }, false);
-    try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%   77.0%  (resets "));
-    try std.testing.expect(std.mem.startsWith(u8, idle, "    --   77.0%  (resets "));
+    } }, false, 1790874000 - 3 * 86400);
+    const idle = pickerLabel(&b2, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false, 1790874000 - 3 * 86400);
+    const failed = pickerLabel(&b3, .{ .failed = .{ .step = .usage, .status = 429 } }, false, 0);
+    try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%   77.0%  3d 0h "));
+    try std.testing.expect(std.mem.startsWith(u8, idle, "    --   77.0%  3d 0h "));
     try std.testing.expectEqual(read.len, idle.len);
     try std.testing.expectEqual(read.len, failed.len);
     try std.testing.expectEqualStrings("    5h      7d  resets", PICKER_HEADER);
+    // Colors add escapes without eating into the padding: green and orange, each with a reset.
+    var b4: [192]u8 = undefined;
+    const colored = pickerLabel(&b4, .{ .usage = .{
+        .five_hour = .{ .pct = 4, .resets_at = 1790874000 },
+        .seven_day = .{ .pct = 77, .resets_at = 1790874000 },
+    } }, true, 1790874000 - 3 * 86400);
+    try std.testing.expectEqual(read.len + (5 + 4) + (11 + 4), colored.len);
 }
 
 test "parseUsage rejects non-JSON" {
