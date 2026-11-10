@@ -11,7 +11,8 @@ session runs the stand-ins below and asks the user only for what needs their rea
   `security`. Nothing about real profiles, Desktop's cookies or the Keychain can be checked here.
 - There is no `zig` on `PATH`. A Zig 0.16 toolchain sits at `/tmp/deps/zig-x86_64-linux-0.16.0/zig`,
   a Linux sqlite build at `/tmp/deps/pfx` (`include/`, `lib/libsqlite3.a`), and a stand-in macOS
-  sysroot at `/tmp/deps/mac` that holds only sqlite's header and `libsqlite3.tbd`. An earlier session
+  sysroot at `/tmp/deps/mac` that holds only sqlite's header and `libsqlite3.tbd`. A Linux skim build
+  at `/tmp/deps/sk/skim-x86_64-unknown-linux-gnu` serves the picker render (AGENTS.md). An earlier session
   left them in `/tmp`, so a fresh box may not have them.
 
 ## Stand-ins for the gates
