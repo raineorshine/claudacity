@@ -316,8 +316,10 @@ fn formatPct(buf: []u8, pct: f64, color: bool) []const u8 {
 
 /// Width of a window's time-left text, fitting its placeholder "no active window".
 const WINDOW_LEFT_WIDTH = 16;
-/// Visible width of `pickerLabel`'s usage columns: 5h percentage, weekly percentage, time left.
-const USAGE_COLS_WIDTH = 6 + 2 + 6 + 2 + WINDOW_LEFT_WIDTH;
+/// Width of a time left in the picker, fitting the longest a window can show ("6d 23h").
+const PICKER_LEFT_WIDTH = 6;
+/// Visible width of `pickerLabel`'s usage columns: each window's percentage and time left.
+const USAGE_COLS_WIDTH = 2 * (6 + 2 + PICKER_LEFT_WIDTH) + 2;
 /// Width of every `pickerLabel`, which fits its longest failure label.
 const PICKER_WIDTH = 49;
 
@@ -331,20 +333,27 @@ fn formatWindow(buf: []u8, window: ?Window, color: bool, now: i64) []const u8 {
     return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), formatLeft(&t, w.resets_at - now), width }) catch "";
 }
 
-/// The header over `pickerLabel`'s columns.
-pub const PICKER_HEADER = std.fmt.comptimePrint("{s:>6}  {s:>6}  {s}", .{ "5h", "7d", "resets" });
+/// The header over `pickerLabel`'s columns; each reset column sits unlabeled after its window's.
+pub const PICKER_HEADER = std.fmt.comptimePrint("{s:>6}" ++ " " ** (2 + PICKER_LEFT_WIDTH + 2) ++ "{s:>6}", .{ "5h", "7d" });
 
-/// The usage column `claudacity pick` shows beside a profile: 5-hour and weekly percentages, then
-/// the time left until the weekly reset, the same width for every state.
+/// A window's picker columns: its percentage and the time left until it resets, or "--" and a
+/// blank when the API reports no window. Padded by hand: color escapes would count toward a width.
+fn pickerWindow(buf: []u8, window: ?Window, color: bool, now: i64) []const u8 {
+    const w = window orelse return std.fmt.bufPrint(buf, "{s:>6}  {s:[2]}", .{ "--", "", PICKER_LEFT_WIDTH }) catch "";
+    var p: [32]u8 = undefined;
+    var t: [64]u8 = undefined;
+    return std.fmt.bufPrint(buf, "{s}  {s:<[2]}", .{ formatPct(&p, w.pct, color), formatLeft(&t, w.resets_at - now), PICKER_LEFT_WIDTH }) catch "";
+}
+
+/// The usage column `claudacity pick` shows beside a profile: the 5-hour percentage and its reset,
+/// then the weekly percentage and its reset, the same width for every state.
 pub fn pickerLabel(buf: []u8, state: State, color: bool, now: i64) []const u8 {
     var why: [64]u8 = undefined;
     const text: []const u8 = switch (state) {
         .usage => |u| {
-            var p: [32]u8 = undefined;
-            var w: [128]u8 = undefined;
-            const five = if (u.five_hour) |f| formatPct(&p, f.pct, color) else "    --";
-            // Padded by hand: color escapes would count toward a `{s:<N}` width.
-            return std.fmt.bufPrint(buf, "{s}  {s}{s:[3]}", .{ five, formatWindow(&w, u.seven_day, color, now), "", PICKER_WIDTH - USAGE_COLS_WIDTH }) catch "";
+            var b1: [128]u8 = undefined;
+            var b2: [128]u8 = undefined;
+            return std.fmt.bufPrint(buf, "{s}  {s}{s:[3]}", .{ pickerWindow(&b1, u.five_hour, color, now), pickerWindow(&b2, u.seven_day, color, now), "", PICKER_WIDTH - USAGE_COLS_WIDTH }) catch "";
         },
         .needs_sign_in => "needs signing in again",
         .no_login => "no saved login",
@@ -389,7 +398,7 @@ pub fn printRows(rows: []const ProfileUsage) void {
                 var b1: [128]u8 = undefined;
                 var b2: [128]u8 = undefined;
                 display.print("{s}{s:<12} 5h {s}   7d {s}\n", .{
-                    marker,                                  row.name,
+                    marker,                                     row.name,
                     formatWindow(&b1, u.five_hour, color, now), formatWindow(&b2, u.seven_day, color, now),
                 });
             },
@@ -493,11 +502,11 @@ test "pickerLabel keeps one width across states" {
     } }, false, 1790874000 - 3 * 86400);
     const idle = pickerLabel(&b2, .{ .usage = .{ .seven_day = .{ .pct = 77, .resets_at = 1790874000 } } }, false, 1790874000 - 3 * 86400);
     const failed = pickerLabel(&b3, .{ .failed = .{ .step = .usage, .status = 429 } }, false, 0);
-    try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%   77.0%  3d 0h "));
-    try std.testing.expect(std.mem.startsWith(u8, idle, "    --   77.0%  3d 0h "));
+    try std.testing.expect(std.mem.startsWith(u8, read, "  4.0%  3d 0h    77.0%  3d 0h "));
+    try std.testing.expect(std.mem.startsWith(u8, idle, "    --           77.0%  3d 0h "));
     try std.testing.expectEqual(read.len, idle.len);
     try std.testing.expectEqual(read.len, failed.len);
-    try std.testing.expectEqualStrings("    5h      7d  resets", PICKER_HEADER);
+    try std.testing.expectEqualStrings("    5h              7d", PICKER_HEADER);
     // Colors add escapes without eating into the padding: green and orange, each with a reset.
     var b4: [192]u8 = undefined;
     const colored = pickerLabel(&b4, .{ .usage = .{
