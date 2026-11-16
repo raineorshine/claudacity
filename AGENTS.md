@@ -62,6 +62,7 @@ After a real release, curl the asset `install.sh` names and run its `--version`.
 - Code reached from a test must not write to stdout: the test runner speaks to the build server over stdout, and the run hangs with no error. Guard prints with `builtin.is_test`.
 - Times print in the Mac's local zone (`localtime_r`, `%Z`). A test that checks a formatted time pins the zone with `setenv("TZ", …)` and `tzset()` so it passes in any zone; to see another zone from the binary, run it with `TZ=Asia/Tokyo`.
 - A new module needs its `_ = @import(...)` line in `main.zig`'s comptime block, or `zig build test` never runs its tests.
+- Rewriting a file Claude Code owns (a profile JSON, `~/Library/Application Support/claudacity/oauth-accounts.json`) parses it with `.parse_numbers = false`, so numbers come back out as written, and writes a sibling temp file renamed over it, so a live session never reads half a file (`account_record.writeAtomic`).
 - In-process work with no subprocess to kill (`std.http.Client`) is bounded with `std.Io.Select` racing it against `std.Io.sleep` (`http.sendDirect`).
 - Background work for the length of a step runs with `io.concurrent`, which returns a `std.Io.Future` and can fail where no concurrency is available, so keep an inline fallback. A loop in it that sleeps with `io.sleep` ends on `Future.cancel`, because the sleep returns `error.Canceled` (`display.Progress`).
 - Zig 0.16's `std.time` has no `milliTimestamp`; use `oauth.nowMs()`.
