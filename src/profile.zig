@@ -15,6 +15,7 @@ const marketplaces = @import("marketplaces.zig");
 const oauth_login = @import("oauth.zig");
 const exec = @import("exec.zig");
 const accounts = @import("accounts.zig");
+const account_record = @import("account_record.zig");
 
 const c = @cImport({
     @cInclude("dirent.h");
@@ -38,10 +39,18 @@ pub fn current(gpa: std.mem.Allocator) !?[]const u8 {
     return currentIn(gpa, h);
 }
 
-pub fn profileJsonEmail(gpa: std.mem.Allocator, name: []const u8) !?[]const u8 {
+pub fn profileAccount(gpa: std.mem.Allocator, name: []const u8) !?[]const u8 {
     const h = try paths.home(gpa);
     defer gpa.free(h);
-    return profileJsonEmailIn(gpa, h, name);
+    return profileAccountIn(gpa, h, name);
+}
+
+/// The account to show for `name`: its pin, else the `oauthAccount` its JSON names. The
+/// pin wins because a `claude` process left running as another account after a switch
+/// writes that account's `oauthAccount` into whichever profile is active.
+pub fn profileAccountIn(gpa: std.mem.Allocator, base: []const u8, name: []const u8) !?[]const u8 {
+    if (accounts.pinned(gpa, base, name)) |p| return p;
+    return profileJsonEmailIn(gpa, base, name);
 }
 
 /// Saves the live login as `name`'s and pins `name` to its account: the user
@@ -161,6 +170,21 @@ pub const UseResult = struct {
 /// Carries Desktop's preferences, MCP servers and local environments from
 /// `from`, already swapped out, into the live Desktop dir now holding `to`.
 /// A failure only warns.
+/// Puts back a profile's `oauthAccount` that a `claude` process left running
+/// from an earlier switch overwrote with its own account (`account_record.zig`).
+fn checkAccountRecord(gpa: std.mem.Allocator, io: std.Io, h: []const u8, name: []const u8) void {
+    const outcome = account_record.checkIn(gpa, io, h, name) catch |err| {
+        display.print("⚠️  Could not check the account recorded for '{s}': {s}\n", .{ name, @errorName(err) });
+        return;
+    };
+    defer outcome.deinit(gpa);
+    switch (outcome) {
+        .repaired => |was| display.print("Restored '{s}''s account record, which a leftover session had set to {s}\n", .{ name, was }),
+        .wrong => |was| display.print("⚠️  '{s}' records {s}'s account and no copy of its own was found; run `claudacity login {s}`\n", .{ name, was, name }),
+        else => {},
+    }
+}
+
 fn carryDesktopSettings(gpa: std.mem.Allocator, io: std.Io, h: []const u8, from: []const u8, to: []const u8) void {
     if (std.mem.eql(u8, from, to)) return;
     const from_dir = paths.desktopProfileDirIn(gpa, h, from) catch return;
@@ -310,6 +334,9 @@ pub fn useWith(gpa: std.mem.Allocator, io: std.Io, name: []const u8, opts: UseOp
     }
 
     try switchLinksIn(gpa, h, name);
+    // Before the swap, which looks Desktop's sessions up by these records' ids.
+    if (cur) |c_name| checkAccountRecord(gpa, io, h, c_name);
+    checkAccountRecord(gpa, io, h, name);
     try desktop.swap(gpa, cur, name);
     if (cur) |c_name| carryDesktopSettings(gpa, io, h, c_name, name);
     // Desktop is quit, so its cookies are settled; sync before relaunching it.
@@ -1071,7 +1098,7 @@ pub fn pickerLinesIn(gpa: std.mem.Allocator, base: []const u8, profiles: []const
     }
     var email_width: usize = 0;
     for (profiles, emails) |p, *e| {
-        e.* = try profileJsonEmailIn(gpa, base, p);
+        e.* = try profileAccountIn(gpa, base, p);
         if (e.*) |s| email_width = @max(email_width, s.len);
     }
     if (email_width > 0) email_width = @max(email_width, "email".len);
@@ -1380,6 +1407,15 @@ test "pickerLinesIn alinha nome e email" {
     }
     try std.testing.expectEqualStrings("work   \tme@work.com\t7d 10%", both[1]);
     try std.testing.expectEqualStrings("personal", pickerName(labeled[1]));
+
+    // A stale `oauthAccount` loses to the pin.
+    try accounts.pin(alloc, base, "work", "pinned@work.com");
+    const pinned_lines = try pickerLinesIn(alloc, base, &.{"work"}, null);
+    defer {
+        for (pinned_lines) |l| alloc.free(l);
+        alloc.free(pinned_lines);
+    }
+    try std.testing.expectEqualStrings("work   \tpinned@work.com", pinned_lines[1]);
 }
 
 test "pickerName extrai nome da linha" {

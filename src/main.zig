@@ -36,6 +36,7 @@ comptime {
     _ = @import("envs.zig");
     _ = @import("marketplaces.zig");
     _ = @import("accounts.zig");
+    _ = @import("account_record.zig");
 }
 
 const KEYCHAIN_CODE = "Claude Code-credentials";
@@ -549,7 +550,7 @@ fn cmdWhoami(gpa: std.mem.Allocator, io: std.Io) !void {
                     else
                         std.json.Value.null;
 
-                    const email_raw = try profile.profileJsonEmail(gpa, p);
+                    const email_raw = try profile.profileAccount(gpa, p);
                     defer if (email_raw) |e| gpa.free(e);
                     const email = email_raw orelse "?";
 
